@@ -1,0 +1,3 @@
+Strategy,Example tokens (first 15),Token count (sample)
+Word-level (A),"['heard', 'much', 'movie', 'great', 'slasher', 'one', 'early', 'movies', 'die', 'hard', 'fans', 'slasher', 'movies', 'see', 'well']",34
+WordPiece BERT (B),"['heard', 'much', 'movie', 'great', 'slash', '##er', 'one', 'early', 'movies', 'die', 'hard', 'fans', 'slash', '##er', 'movies']",37

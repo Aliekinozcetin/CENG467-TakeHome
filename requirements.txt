@@ -1,0 +1,34 @@
+# Core ML / DL
+torch
+torchvision
+torchaudio
+
+# Transformers & Datasets
+transformers
+datasets
+evaluate
+tokenizers
+sacremoses
+sentencepiece
+
+# Classical ML
+scikit-learn
+
+# NLP utilities
+nltk
+sumy
+spacy<3.8
+networkx
+seqeval
+
+# Evaluation metrics
+rouge-score
+bert-score
+sacrebleu
+
+# Data & Viz
+numpy
+pandas
+matplotlib
+seaborn
+tqdm

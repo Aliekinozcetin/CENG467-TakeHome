@@ -1,0 +1,4 @@
+Split,Avg tokens (raw),Avg tokens (clean),Token reduction %,Samples with HTML tags,Vocab size (raw),Vocab size (clean)
+Train,231.3,118.2,48.9,26249,366647,95196
+Val,231.4,117.9,49.0,1453,59093,27798
+Test,228.1,116.7,48.8,1500,58859,27463
