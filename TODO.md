@@ -118,56 +118,56 @@
 ## 📌 PHASE 4 — Q4: Machine Translation
 
 ### 4A — Dataset
-- [ ] `4.1` Multi30k dataset yükle (EN→DE, train/val/test)
-- [ ] `4.2` Preprocessing: lowercase, tokenize (spaCy en/de modelleri), BPE vocab oluştur
-- [ ] `4.3` Vocabulary boyutu belirle (max 8K-10K)
+- [x] `4.1` Multi30k dataset yükle (EN→DE) — train=29000, val=1014, test=1000
+- [x] `4.2` Preprocessing: spaCy tokenization (en_core_web_sm / de_core_news_sm), lowercase
+- [x] `4.3` Word-level vocabulary (min_freq=2) — EN ~5K, DE ~7K tokens
 
 ### 4B — Model Implementasyonları
-- [ ] `4.4` **Model 1: Seq2Seq + Bahdanau Attention**
-  - Encoder: 2-layer LSTM, hidden=512
-  - Decoder: 1-layer LSTM + attention
+- [x] `4.4` **Model 1: Seq2Seq + Bahdanau Attention**
+  - Encoder: 1-layer BiLSTM, hidden=256 (CPU — LSTM MPS'den hızlı)
+  - Decoder: 1-layer LSTM + Bahdanau Attention
   - Embedding dim: 256, Dropout: 0.3
-  - Adam, lr=1e-3, gradient clipping=1.0, epoch=20
+  - Adam, lr=1e-3, gradient clipping=1.0, epoch=10
   - Teacher forcing ratio: 0.5
-- [ ] `4.5` **Model 2: Helsinki-NLP/opus-mt-en-de** (pretrained Transformer)
-  - HuggingFace'den direkt inference (fine-tune opsiyonel)
-  - Beam search decoding (num_beams=5)
+- [x] `4.5` **Model 2: Helsinki-NLP/opus-mt-en-de** (pretrained Transformer)
+  - HuggingFace direkt inference, beam search (num_beams=5), max_length=128
 
 ### 4C — Evaluation
-- [ ] `4.6` BLEU hesapla (`sacrebleu`)
-- [ ] `4.7` METEOR hesapla
-- [ ] `4.8` ChrF hesapla (`sacrebleu`)
-- [ ] `4.9` BERTScore hesapla
-- [ ] `4.10` Sonuçları tablo olarak kaydet (`outputs/q4_results.csv`)
-- [ ] `4.11` **En az 1 qualitative örnek**: source + reference + her iki model çıktısı
-- [ ] `4.12` Rare word handling ve long-range dependency analizi yaz
-- [ ] `4.13` Her metriğin farklı kalite boyutunu nasıl yansıttığını tartış
+- [x] `4.6` BLEU hesapla (`sacrebleu`)
+- [x] `4.7` METEOR hesapla (`nltk.translate.meteor_score`)
+- [x] `4.8` ChrF hesapla (`sacrebleu`)
+- [x] `4.9` BERTScore hesapla (`bert-base-multilingual-cased`, lang=de)
+- [x] `4.10` Sonuçları tablo olarak kaydet → `outputs/q4/q4_results.csv`
+- [x] `4.11` 5 qualitative örnek → `outputs/q4/q4_qualitative.csv` (idx: 0,100,200,400,700)
+- [x] `4.12` Rare word (OOV rate) + length-bucket BLEU analizi → `outputs/q4/q4_length_analysis.csv`
+- [x] `4.13` Her metriğin kalite boyutu: BLEU (precision), ChrF (morphology), METEOR (recall), BERTScore (semantic)
+- [ ] `4.14` Sonuçları analiz et ve raporda tartış *(rapor yazılırken tamamlanacak)*
 
 ---
 
 ## 📌 PHASE 5 — Q5: Language Modeling
 
 ### 5A — Dataset
-- [ ] `5.1` WikiText-2 dataset yükle (Penn Treebank'a göre daha temiz ve modern)
-- [ ] `5.2` Tokenization: word-level, `<unk>` ve `<eos>` tokenleri ekle
-- [ ] `5.3` Vocabulary oluştur (min_freq=2)
+- [x] `5.1` WikiText-2 dataset yükle (wikitext-2-raw-v1)
+- [x] `5.2` Tokenization: word-level, lowercase, `<unk>`, `<eos>`, `<pad>` tokenleri
+- [x] `5.3` Vocabulary oluştur (min_freq=2)
 
 ### 5B — Model Implementasyonları
-- [ ] `5.4` **Model 1: N-gram Language Model (Trigram)**
-  - NLTK ile trigram modeli
-  - Laplace smoothing
-  - Perplexity hesabı
-- [ ] `5.5` **Model 2: LSTM Language Model**
+- [x] `5.4` **Model 1: Trigram LM (Laplace smoothing)**
+  - defaultdict(Counter) bigram context tablosu
+  - Add-1 (Laplace) smoothing
+  - Val + Test perplexity, temperature sampling (0.8)
+- [x] `5.5` **Model 2: LSTM Language Model**
   - 2-layer LSTM, hidden=512, embedding=256
-  - Dropout: 0.5, weight tying (embedding = output layer)
-  - SGD + lr scheduling, epoch=30, batch=32, bptt=35
-  - MPS device
+  - Dropout=0.5, weight tying (embed≠hidden için devre dışı)
+  - SGD + LR decay (÷4 on plateau), epoch=30, batch=32, bptt=35
+  - device=mps/cpu (utils.device)
 
 ### 5C — Evaluation & Generation
-- [ ] `5.6` Test seti perplexity hesapla (her iki model)
-- [ ] `5.7` Her modelden **5 adet kısa text sample** üret (temperature sampling)
-- [ ] `5.8` Fluency ve coherence karşılaştırmalı analizi yaz
-- [ ] `5.9` Sonuçları tablo olarak kaydet (`outputs/q5_results.csv`)
+- [x] `5.6` Val + Test perplexity hesapla → `outputs/q5/q5_results.csv`
+- [x] `5.7` Her modelden 5 sample → `outputs/q5/q5_samples.csv` (temperature=0.8)
+- [x] `5.8` Fluency/coherence karşılaştırması (print + rapor)
+- [ ] `5.9` Sonuçları analiz et ve raporda tartış *(rapor yazılırken tamamlanacak)*
 
 ---
 

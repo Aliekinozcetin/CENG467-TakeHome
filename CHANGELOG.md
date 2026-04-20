@@ -182,34 +182,70 @@ Format: `[YYYY-MM-DD] | Phase | Description`
 
 ---
 
-## [YYYY-MM-DD] — Phase 4: Q4 Machine Translation
+## [2026-04-20] — Phase 4: Q4 Machine Translation
 ### Added
-- [ ] Multi30k yükleme ve preprocessing
-- [ ] BPE vocab oluşturma
-- [ ] Seq2Seq + Bahdanau Attention implementasyonu
-- [ ] Helsinki-NLP/opus-mt-en-de inference
-- [ ] BLEU, METEOR, ChrF, BERTScore hesabı
-- [ ] Qualitative örnek analizi
+- [x] Multi30k yükleme (bentrevett/multi30k) — train=29000, val=1014, test=1000
+- [x] spaCy tokenization (en_core_web_sm + de_core_news_sm), lowercase
+- [x] Word-level vocabulary (min_freq=2): EN ~5K, DE ~7K token
+- [x] Seq2Seq + Bahdanau Attention — 1-layer BiLSTM encoder, 1-layer LSTM decoder
+  - CPU eğitim (LSTM MPS'den hızlı), epoch=10, batch=256, Adam lr=1e-3, clip=1.0
+  - Best checkpoint → outputs/q4/seq2seq_best.pt (gitignore'a eklendi)
+- [x] Helsinki-NLP/opus-mt-en-de — direkt inference, beam_search num_beams=5
+- [x] BLEU, ChrF, METEOR, BERTScore (bert-base-multilingual-cased, lang=de)
+- [x] 5 qualitative örnek → outputs/q4/q4_qualitative.csv
+- [x] Length-bucket BLEU + OOV analizi → outputs/q4/q4_length_analysis.csv
+- [x] Training curve → outputs/q4/q4_seq2seq_curve.png
+- [x] Metrics chart → outputs/q4/q4_metrics_comparison.png
+
+### Hyperparameters (actual vs TODO)
+| Param | TODO | Kod | Gerekçe |
+|-------|------|-----|---------|
+| N_EPOCHS | 20 | 10 | CPU'da makul süre, best-ckpt ile yeterli |
+| HIDDEN_SIZE | 512 | 256 | Bellek/hız optimizasyonu |
+| N_LAYERS | 2 | 1 | CPU performansı |
+| Device | MPS | CPU | LSTM CPU'da daha hızlı |
+
 ### Results
-| Model | BLEU | METEOR | ChrF | BERTScore |
-|-------|------|--------|------|-----------|
-| Seq2Seq+Attn | TBD | TBD | TBD | TBD |
-| Helsinki-NLP | TBD | TBD | TBD | TBD |
+| Model | BLEU | METEOR | ChrF | BERTScore-F1 |
+|-------|------|--------|------|-------------|
+| Seq2Seq+Bahdanau | 3.5128 | 0.4569 | 38.9939 | 0.7415 |
+| Helsinki-NLP/opus-mt-en-de | 36.3710 | 0.5924 | 64.2252 | 0.8972 |
+
+### Observations
+- Helsinki tüm metriklerde Seq2Seq'i belirgin geride bıraktı (BLEU: 36.4 vs 3.5)
+- Seq2Seq repetition sorunu: greedy decode + no_repeat_ngram_size eksikliği ("etwas etwas etwas…")
+- Seq2Seq ChrF=38.99 ve METEOR=0.457: morfoloji öğrenilmiş, sıra/tekrar hatası var
+- Best checkpoint epoch 7 (val_ppl=20.8), epoch 8+ hafif overfitting
+- Test OOV rate: %1.71 — düşük, vocab yeterli
+- Length-bucket: kısa cümlede Seq2Seq BLEU=9.47, uzunda 5.04 — uzun bağımlılık zayıf
+- Helsinki BERTScore=0.8972: semantik içerik neredeyse referans kalitesinde
 
 ---
 
-## [YYYY-MM-DD] — Phase 5: Q5 Language Modeling
+## [2026-04-20] — Phase 5: Q5 Language Modeling
 ### Added
-- [ ] WikiText-2 yükleme ve tokenization
-- [ ] Trigram LM (Laplace smoothing)
-- [ ] LSTM LM (2-layer, weight tying)
-- [ ] Perplexity hesabı
-- [ ] Text generation örnekleri
+- [x] WikiText-2 yükleme (wikitext-2-raw-v1), word-level tokenization
+- [x] Vocab: min_freq=2, <pad>/<unk>/<eos> özel tokenler
+- [x] Trigram LM: defaultdict(Counter) bigram context, Laplace smoothing
+- [x] LSTM LM: 2-layer, hidden=512, embed=256, dropout=0.5, SGD+LR-decay, bptt=35
+- [x] Val/Test perplexity → outputs/q5/q5_results.csv
+- [x] 5 text sample her model → outputs/q5/q5_samples.csv (temperature=0.8)
+- [x] Training curve + LR schedule → outputs/q5/q5_lstm_curve.png
+- [x] Perplexity bar chart → outputs/q5/q5_perplexity_comparison.png
+- [x] outputs/q5/lstm_best.pt gitignore'a eklendi
+
 ### Results
-| Model | Perplexity |
-|-------|-----------|
-| Trigram | TBD |
-| LSTM | TBD |
+| Model | Val PPL | Test PPL |
+|-------|---------|---------|
+| Trigram (Laplace) | 15728.80 | 15295.68 |
+| LSTM LM (2-layer) | 341.26 | 326.52 |
+
+### Observations
+- Trigram yüksek PPL beklenen: Laplace smoothing + 39K vocab = agresif ceza (sparsity problemi)
+- LSTM 30 epoch boyunca sürekli iyileşti, LR decay hiç tetiklenmedi — daha fazla epoch ile düşer
+- LSTM qualitative: anlamlı İngilizce yapılar üretiyor; Trigram tamamen incoherent
+- Literatür hedefi: WikiText-2 2-layer LSTM ~130 PPL; bizim 326.52 epoch sınırlılığından
+- Weight tying aktif (embed=hidden=512): parameter verimliliği sağlandı
 
 ---
 

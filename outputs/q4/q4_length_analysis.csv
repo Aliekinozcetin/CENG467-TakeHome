@@ -1,0 +1,4 @@
+bucket,count,seq2seq_bleu,helsinki_bleu,test_oov_rate
+short (≤10),283,9.4697,40.1382,0.0171
+medium (11-25),701,8.1581,35.3238,0.0171
+long (>25),16,5.0433,25.315,0.0171

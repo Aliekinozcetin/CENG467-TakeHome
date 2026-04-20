@@ -10,6 +10,8 @@ __pycache__/
 # Model checkpoints (büyük dosyalar)
 outputs/q1/bert_best.pt
 outputs/q2/bert_ner_best.pt
+outputs/q4/seq2seq_best.pt
+outputs/q5/lstm_best.pt
 
 # OS
 .DS_Store

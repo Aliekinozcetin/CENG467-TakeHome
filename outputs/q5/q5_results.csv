@@ -1,0 +1,3 @@
+model,val_ppl,test_ppl
+Trigram (Laplace),15728.8,15295.68
+LSTM LM (2-layer),341.26,326.52
