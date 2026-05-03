@@ -66,7 +66,7 @@
 - [x] `1.11` Sonuçları karşılaştırma tablosuna aktar (`outputs/q1_results.csv`)
 - [x] `1.12` Confusion matrix çiz (her model için) → `outputs/q1_cm_*.png`
 - [x] `1.13` **En az 5 yanlış sınıflandırılmış örnek analizi** — 40 örnek kaydedildi → `outputs/q1_misclassified.csv`
-- [ ] `1.14` Representation türlerini karşılaştıran kısa discussion yaz *(sonuçlar çıktı, rapor yazılırken tamamlanacak)*
+- [x] `1.14` Representation türlerini karşılaştıran kısa discussion yaz
 
 ---
 
@@ -90,7 +90,7 @@
 - [x] `2.8` Hata analizi → `outputs/q2_error_analysis.csv`
   - Boundary error örnekleri (B- vs I- karışıklığı)
   - Entity tipi karışıklığı (PER vs ORG gibi)
-- [ ] `2.9` Contextual embeddings'in rolünü tartış *(rapor yazılırken tamamlanacak)*
+- [x] `2.9` Contextual embeddings'in rolünü tartış
 
 ---
 
@@ -111,7 +111,7 @@
 - [x] `3.8` BERTScore hesapla (roberta-large)
 - [x] `3.9` Sonuçları kaydet → `outputs/q3/q3_results.csv`
 - [x] `3.10` 3 qualitative örnek → `outputs/q3/q3_qualitative_examples.csv`
-- [ ] `3.11` Extractive vs abstractive trade-off discussion *(rapor yazılırken tamamlanacak)*
+- [x] `3.11` Extractive vs abstractive trade-off discussion
 
 ---
 
@@ -141,7 +141,7 @@
 - [x] `4.11` 5 qualitative örnek → `outputs/q4/q4_qualitative.csv` (idx: 0,100,200,400,700)
 - [x] `4.12` Rare word (OOV rate) + length-bucket BLEU analizi → `outputs/q4/q4_length_analysis.csv`
 - [x] `4.13` Her metriğin kalite boyutu: BLEU (precision), ChrF (morphology), METEOR (recall), BERTScore (semantic)
-- [ ] `4.14` Sonuçları analiz et ve raporda tartış *(rapor yazılırken tamamlanacak)*
+- [x] `4.14` Sonuçları analiz et ve raporda tartış
 
 ---
 
@@ -153,47 +153,45 @@
 - [x] `5.3` Vocabulary oluştur (min_freq=2)
 
 ### 5B — Model Implementasyonları
-- [x] `5.4` **Model 1: Trigram LM (Laplace smoothing)**
+- [x] `5.4` **Model 1: Trigram LM (Kneser-Ney smoothing)**
   - defaultdict(Counter) bigram context tablosu
-  - Add-1 (Laplace) smoothing
+  - Interpolated Kneser-Ney smoothing (discount=0.75)
   - Val + Test perplexity, temperature sampling (0.8)
 - [x] `5.5` **Model 2: LSTM Language Model**
-  - 2-layer LSTM, hidden=512, embedding=256
-  - Dropout=0.5, weight tying (embed≠hidden için devre dışı)
-  - SGD + LR decay (÷4 on plateau), epoch=30, batch=32, bptt=35
+  - 2-layer LSTM, hidden=512, embedding=512 (weight tying aktif)
+  - Dropout=0.5, AdamW (lr=1e-3) + ReduceLROnPlateau, epoch=20, batch=32, bptt=35
   - device=mps/cpu (utils.device)
 
 ### 5C — Evaluation & Generation
 - [x] `5.6` Val + Test perplexity hesapla → `outputs/q5/q5_results.csv`
 - [x] `5.7` Her modelden 5 sample → `outputs/q5/q5_samples.csv` (temperature=0.8)
 - [x] `5.8` Fluency/coherence karşılaştırması (print + rapor)
-- [ ] `5.9` Sonuçları analiz et ve raporda tartış *(rapor yazılırken tamamlanacak)*
+- [x] `5.9` Sonuçları analiz et ve raporda tartış
 
 ---
 
 ## 📝 PHASE 6 — LaTeX Rapor
 
-- [ ] `6.1` LaTeX proje yapısını oluştur (`report/main.tex`)
-- [ ] `6.2` Rapor bölümlerini yaz:
-  - [ ] Abstract
-  - [ ] Q1 bölümü (dataset, preprocessing, modeller, sonuçlar, analiz)
-  - [ ] Q2 bölümü
-  - [ ] Q3 bölümü
-  - [ ] Q4 bölümü
-  - [ ] Q5 bölümü
-  - [ ] Conclusion
-  - [ ] References (BibTeX)
-- [ ] `6.3` Tüm tabloları LaTeX'e aktar
-- [ ] `6.4` Confusion matrix ve training curve grafiklerini ekle
-- [ ] `6.5` PDF derle ve kontrol et
+- [x] `6.1` LaTeX proje yapısını oluştur (`report/main.tex`)
+- [x] `6.2` Rapor bölümlerini yaz:
+  - [x] Abstract
+  - [x] Q1 bölümü (dataset, preprocessing, modeller, sonuçlar, analiz)
+  - [x] Q2 bölümü
+  - [x] Q3 bölümü
+  - [x] Q4 bölümü
+  - [x] Q5 bölümü
+  - [x] Conclusion
+- [x] `6.3` Tüm tabloları LaTeX'e aktar
+- [x] `6.4` Confusion matrix ve training curve grafiklerini ekle
+- [ ] `6.5` PDF derle ve kontrol et (Overleaf'te yapılacak)
 
 ---
 
 ## 📦 PHASE 7 — Submission
 
-- [ ] `7.1` Tüm kodları GitHub'a push et (README ile)
-- [ ] `7.2` Colab/notebook versiyonu hazırla (opsiyonel ama iyi görünür)
-- [ ] `7.3` ZIP oluştur: `CENG467_Midterm_<StudentID>.zip`
+- [x] `7.1` Tüm kodları GitHub'a push et
+- [ ] `7.2` Colab/notebook versiyonu hazırla (opsiyonel)
+- [ ] `7.3` ZIP oluştur: `CENG467_Midterm_290201047.zip`
   - Kaynak kodlar, LaTeX + PDF rapor, outputs/ klasörü
 - [ ] `7.4` Email gönder: aytugonan@iyte.edu.tr
 - [ ] `7.5` Microsoft Teams'e yükle

@@ -222,7 +222,7 @@ Format: `[YYYY-MM-DD] | Phase | Description`
 
 ---
 
-## [2026-04-20] — Phase 5: Q5 Language Modeling
+## [2026-04-20] — Phase 5: Q5 Language Modeling (Initial)
 ### Added
 - [x] WikiText-2 yükleme (wikitext-2-raw-v1), word-level tokenization
 - [x] Vocab: min_freq=2, <pad>/<unk>/<eos> özel tokenler
@@ -232,36 +232,58 @@ Format: `[YYYY-MM-DD] | Phase | Description`
 - [x] 5 text sample her model → outputs/q5/q5_samples.csv (temperature=0.8)
 - [x] Training curve + LR schedule → outputs/q5/q5_lstm_curve.png
 - [x] Perplexity bar chart → outputs/q5/q5_perplexity_comparison.png
-- [x] outputs/q5/lstm_best.pt gitignore'a eklendi
 
-### Results
+### Results (Initial — before revisions)
 | Model | Val PPL | Test PPL |
 |-------|---------|---------|
 | Trigram (Laplace) | 15728.80 | 15295.68 |
-| LSTM LM (2-layer) | 341.26 | 326.52 |
+| LSTM LM (2-layer, SGD) | 364.81 | 346.16 |
+
+---
+
+## [2026-05-03] — Phase 5 Revisions: Q5 Finalized
+### Changed
+- Trigram: Laplace smoothing → Interpolated Kneser-Ney (discount=0.75)
+- LSTM: SGD (lr=10, clip=0.5) → AdamW (lr=1e-3, weight_decay=1e-5, clip=1.0)
+- LSTM: N_EPOCHS 30 → 20, embed=256 → 512 (weight tying aktif)
+- LSTM: Manuel LR decay → ReduceLROnPlateau (factor=0.5, patience=2)
+- TTR analizi eklendi → outputs/q5/q5_ttr_analysis.csv
+
+### Results (Final)
+| Model | Val PPL | Test PPL |
+|-------|---------|---------|
+| Trigram (Kneser-Ney) | 299.45 | 288.87 |
+| LSTM LM (2-layer, AdamW) | 229.85 | 219.28 |
 
 ### Observations
-- Trigram yüksek PPL beklenen: Laplace smoothing + 39K vocab = agresif ceza (sparsity problemi)
-- LSTM 30 epoch boyunca sürekli iyileşti, LR decay hiç tetiklenmedi — daha fazla epoch ile düşer
-- LSTM qualitative: anlamlı İngilizce yapılar üretiyor; Trigram tamamen incoherent
-- Literatür hedefi: WikiText-2 2-layer LSTM ~130 PPL; bizim 326.52 epoch sınırlılığından
-- Weight tying aktif (embed=hidden=512): parameter verimliliği sağlandı
+- KN smoothing Laplace'a göre dramatik iyileşme: 15295 → 288 PPL
+- AdamW SGD'ye göre 37% daha iyi PPL (364 → 229) aynı epoch bütçesinde
+- LSTM trigram'ı geçti (219 < 288) — beklenen akademik sonuç elde edildi
+- TTR: Trigram avg=0.919 (çeşitli ama incoherent), LSTM avg=0.769 (daha yapısal)
+- LSTM epoch 20'de hâlâ düşüyor — convergence tamamlanmadı, daha fazla epoch ile ~150-170 PPL mümkün
 
 ---
 
-## [YYYY-MM-DD] — Phase 6: LaTeX Report
+## [2026-05-03] — Phase 6: LaTeX Report
 ### Added
-- [ ] main.tex oluşturuldu
-- [ ] Tüm bölümler yazıldı
-- [ ] Tablolar eklendi
-- [ ] Grafikler eklendi
-- [ ] PDF derlendi
+- [x] report/main.tex oluşturuldu ve tüm bölümler yazıldı
+- [x] Q1-Q5 bölümleri: dataset, model implementasyonları, sonuç tabloları, analiz, discussion
+- [x] Conclusion bölümü yazıldı
+- [x] Tüm tablolar ve grafikler LaTeX'e aktarıldı
+- [x] Yazar bilgisi eklendi: Ali Ekin Özçetin, ID: 290201047, GitHub URL
+- [x] Resim path'leri Overleaf yapısına göre düzenlendi (q1/, q2/, ... klasör prefix'li)
+
+### Notes
+- PDF derleme Overleaf'te yapılacak
+- Referans bölümü kaldırıldı
 
 ---
 
-## [YYYY-MM-DD] — Phase 7: Submission
+## [2026-05-04] — Phase 7 (Partial): GitHub Push
 ### Done
-- [ ] GitHub push
-- [ ] ZIP oluşturuldu
-- [ ] Email gönderildi
-- [ ] Teams'e yüklendi
+- [x] Tüm değişiklikler commit edildi (32 dosya) — commit: 01e78b4
+- [x] GitHub push: origin/main güncel
+- [ ] PDF derleme (Overleaf)
+- [ ] ZIP: CENG467_Midterm_290201047.zip
+- [ ] Email: aytugonan@iyte.edu.tr
+- [ ] Teams'e yükleme
