@@ -507,15 +507,29 @@ print("  Metrics chart → outputs/q4/q4_metrics_comparison.png")
 # ---------------------------------------------------------------------------
 # 4.11 — Qualitative examples
 # ---------------------------------------------------------------------------
+from sacrebleu.metrics import BLEU as SacreBLEU
+_bleu = SacreBLEU(effective_order=True)
+
+def sentence_bleu(hyp, ref):
+    try:
+        return _bleu.sentence_score(hyp, [ref]).score
+    except Exception:
+        return 0.0
+
 print("\n4.11  Qualitative examples…")
 qual_indices = [0, 100, 200, 400, 700]
 qual_rows = []
 for idx in qual_indices:
+    ref = test_de_raw[idx]
+    s2s_bleu = sentence_bleu(seq2seq_hyps[idx], ref)
+    hel_bleu = sentence_bleu(helsinki_hyps[idx], ref)
     qual_rows.append({
-        "source_en":    test_en_raw[idx],
-        "reference_de": test_de_raw[idx],
-        "seq2seq":      seq2seq_hyps[idx],
-        "helsinki":     helsinki_hyps[idx],
+        "source_en":      test_en_raw[idx],
+        "reference_de":   ref,
+        "seq2seq":        seq2seq_hyps[idx],
+        "helsinki":       helsinki_hyps[idx],
+        "seq2seq_bleu":   round(s2s_bleu, 4),
+        "helsinki_bleu":  round(hel_bleu, 4),
     })
 
 pd.DataFrame(qual_rows).to_csv("outputs/q4/q4_qualitative.csv", index=False)
@@ -523,8 +537,8 @@ print("  Qualitative examples → outputs/q4/q4_qualitative.csv")
 for r in qual_rows[:3]:
     print(f"\n    SRC:  {r['source_en']}")
     print(f"    REF:  {r['reference_de']}")
-    print(f"    S2S:  {r['seq2seq']}")
-    print(f"    HEL:  {r['helsinki']}")
+    print(f"    S2S:  {r['seq2seq']}  [BLEU={r['seq2seq_bleu']}]")
+    print(f"    HEL:  {r['helsinki']}  [BLEU={r['helsinki_bleu']}]")
 
 # ---------------------------------------------------------------------------
 # 4.12-4.13 — Rare word & long-range analysis + summary
@@ -540,15 +554,6 @@ for toks in test_en_tok:
 oov_mean = float(np.mean(oov_rates))
 
 # Sentence-level BLEU by length bucket for Seq2Seq
-from sacrebleu.metrics import BLEU as SacreBLEU
-_bleu = SacreBLEU(effective_order=True)
-
-def sentence_bleu(hyp, ref):
-    try:
-        return _bleu.sentence_score(hyp, [ref]).score
-    except Exception:
-        return 0.0
-
 buckets = {"short (≤10)": [], "medium (11-25)": [], "long (>25)": []}
 for hyp, ref, src_t in zip(seq2seq_hyps, test_de_raw, test_en_tok):
     ln = len(src_t)

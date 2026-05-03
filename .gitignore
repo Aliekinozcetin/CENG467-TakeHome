@@ -7,9 +7,16 @@ __pycache__/
 *.pyo
 *.pyd
 
+# Dataset cache
+outputs/q2/conll2003_cached/
+
 # Model checkpoints (büyük dosyalar)
 outputs/q1/bert_best.pt
+outputs/q1/distilbert_best.pt
+outputs/q1/bilstm_best.pt
 outputs/q2/bert_ner_best.pt
+outputs/q2/distilbert_ner_best.pt
+outputs/q2/bilstm_crf_best.pt
 outputs/q4/seq2seq_best.pt
 outputs/q5/lstm_best.pt
 

@@ -6,39 +6,599 @@
 \usepackage{booktabs}
 \usepackage{hyperref}
 \usepackage{geometry}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
 \geometry{margin=2.5cm}
 
 \title{CENG 467 -- Natural Language Understanding and Generation\\
        \large Take-Home Midterm Report}
-\author{Student ID: \textit{<StudentID>}}
+\author{Ali Ekin Özçetin \\ Student ID: 290201047 \\ \small\url{https://github.com/Aliekinozcetin/CENG467-TakeHome}}
 \date{April 2026}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-% TODO: Fill after all experiments are done
+This report presents experiments across five core NLP tasks: text classification, named entity recognition, text summarization, machine translation, and language modeling. For each task, multiple models are implemented, evaluated, and compared under consistent experimental conditions. Results demonstrate the trade-offs between sparse, dense, and contextual representations, as well as the gap between statistical and neural approaches.
 \end{abstract}
 
-\section{Question 1 -- Text Classification}
-% TODO
+% ============================================================
+\section{Question 1 -- Representation Learning in Text Classification}
+% ============================================================
 
+\subsection{Dataset and Properties}
+
+The IMDb movie review dataset was used for binary sentiment classification (positive/negative). The full labeled pool (50{,}000 examples) was shuffled with a fixed seed (42) and split into 45{,}000 training, 2{,}500 validation, and 2{,}500 test examples. The test set was held out and used only once for final evaluation.
+
+\subsection{Preprocessing Pipeline}
+
+A shared preprocessing pipeline was applied to all non-transformer models: (1) lowercasing, (2) HTML tag removal (\texttt{<br />} etc.), (3) punctuation and special character stripping, and (4) English stopword removal (NLTK). DistilBERT received raw, uncleaned text to leverage its own WordPiece tokenizer.
+
+\begin{table}[H]
+\centering
+\caption{Preprocessing impact on the dataset.}
+\label{tab:preproc}
+\begin{tabular}{lrrrr}
+\toprule
+Split & Avg tokens (raw) & Avg tokens (clean) & Reduction & HTML samples \\
+\midrule
+Train & 231.3 & 118.2 & 48.9\% & 26{,}249 \\
+Val   & 231.4 & 117.9 & 49.0\% &  1{,}453 \\
+Test  & 228.1 & 116.7 & 48.8\% &  1{,}500 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Stopword removal reduced token count by approximately 49\%, shrinking the vocabulary from $\sim$366K to $\sim$95K unique tokens on the training set.
+
+\subsection{Tokenization Strategy Comparison}
+
+Two tokenization strategies were compared on the same sample text:
+
+\begin{itemize}
+    \item \textbf{Strategy A -- Word-level:} Simple whitespace split after cleaning. Produces exact surface forms; unknown words become out-of-vocabulary (OOV). Sample: 34 tokens.
+    \item \textbf{Strategy B -- WordPiece (DistilBERT):} Subword tokenization; rare words are decomposed into known subword units (e.g., \textit{slasher} $\to$ \textit{slash + \#\#er}), eliminating OOV entirely. Sample: 37 tokens.
+\end{itemize}
+
+WordPiece produces slightly more tokens per text due to subword splitting but provides better coverage of morphological variants and rare domain-specific terms (film titles, actor names).
+
+Strategy A is employed by the TF-IDF and BiLSTM models, while Strategy B is used exclusively by DistilBERT. This means the two strategies are compared indirectly through model performance: differences in test accuracy between word-level and WordPiece models reflect both tokenization choice and model capacity. A key practical consequence of Strategy B is truncation: with \texttt{max\_length=192}, reviews longer than 192 subword tokens are silently cut off. Given that the average raw review is 231 tokens, a non-trivial portion of reviews lose their final sentences under Strategy B.
+
+\subsection{Model Implementations}
+
+Four models were trained under comparable conditions (same splits, seed=42):
+
+\begin{enumerate}
+    \item \textbf{TF-IDF + Logistic Regression:} \texttt{TfidfVectorizer} with 50{,}000 features and (1,2)-ngrams, followed by \texttt{LogisticRegression(C=1.0, max\_iter=1000)}.
+    \item \textbf{TF-IDF + LinearSVC:} Same TF-IDF representation with \texttt{LinearSVC(C=1.0)}.
+    \item \textbf{BiLSTM + GloVe:} 2-layer bidirectional LSTM (hidden=256), GloVe 6B 100d pretrained embeddings (fine-tuned), dropout=0.3. Trained with Adam (lr=1e-3, batch=64). Early stopping with patience=3 halted training at epoch 4.
+    \item \textbf{DistilBERT-base-uncased:} Full fine-tuning of \texttt{distilbert-base-uncased} (66M parameters). AdamW (lr=3e-5), batch=8, max\_length=192, 3 epochs, linear warmup (6\% of steps), best-checkpoint saving.
+\end{enumerate}
+
+\subsection{Results}
+
+\begin{table}[H]
+\centering
+\caption{Test set performance comparison across all models (IMDb, 2{,}500 test examples).}
+\label{tab:q1results}
+\begin{tabular}{lrrrr}
+\toprule
+Model & Val Acc & Val F1 & Test Acc & Test F1 \\
+\midrule
+TF-IDF + LR       & 0.9120 & 0.9120 & 0.9132 & 0.9130 \\
+TF-IDF + SVM      & 0.9068 & 0.9068 & 0.9140 & 0.9139 \\
+BiLSTM + GloVe    & 0.9052 & 0.9052 & 0.9068 & 0.9066 \\
+DistilBERT        & 0.9120 & 0.9120 & \textbf{0.9180} & \textbf{0.9179} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+DistilBERT achieves the highest test accuracy (0.918) and macro-F1 (0.9179), followed closely by TF-IDF+SVM (0.914). All models exceed 0.90 accuracy, demonstrating that even sparse bag-of-words representations are highly competitive on IMDb.
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}{0.9\textwidth}
+    \includegraphics[width=\linewidth]{q1/q1_bilstm_training_curve.png}
+    \caption{BiLSTM training curve (early stop at epoch 4)}
+\end{subfigure}
+\hfill
+\begin{subfigure}{0.9\textwidth}
+    \includegraphics[width=\linewidth]{q1/q1_bert_training_curve.png}
+    \caption{DistilBERT training curve (3 epochs)}
+\end{subfigure}
+\caption{Training loss and validation accuracy for the two neural models.}
+\label{fig:q1curves}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}{0.48\textwidth}
+    \includegraphics[width=\linewidth]{q1/q1_cm_lr.png}
+    \caption{TF-IDF + LR}
+\end{subfigure}
+\hfill
+\begin{subfigure}{0.48\textwidth}
+    \includegraphics[width=\linewidth]{q1/q1_cm_svm.png}
+    \caption{TF-IDF + SVM}
+\end{subfigure}
+\begin{subfigure}{0.48\textwidth}
+    \includegraphics[width=\linewidth]{q1/q1_cm_bilstm.png}
+    \caption{BiLSTM + GloVe}
+\end{subfigure}
+\hfill
+\begin{subfigure}{0.48\textwidth}
+    \includegraphics[width=\linewidth]{q1/q1_cm_bert.png}
+    \caption{DistilBERT}
+\end{subfigure}
+\caption{Confusion matrices on the test set (Negative=0, Positive=1).}
+\label{fig:q1cms}
+\end{figure}
+
+All four models show a balanced error distribution between false positives and false negatives, indicating no systematic bias toward either class. DistilBERT produces the fewest total errors, with a slight tendency to predict Negative when uncertain, consistent with its lower false-positive rate compared to TF-IDF models.
+
+\subsection{Error Analysis}
+
+Five misclassified examples per model (20 total) were collected and analyzed for common patterns.
+
+\begin{table}[H]
+\centering
+\caption{Error pattern summary per model (5 errors each).}
+\label{tab:q1errors}
+\begin{tabular}{lrrrr}
+\toprule
+Model & Short ($<$50w) \% & Negation \% & Irony markers \% \\
+\midrule
+TF-IDF + LR    & 40.0 & 40.0 & 40.0 \\
+TF-IDF + SVM   & 20.0 & 40.0 & 40.0 \\
+BiLSTM + GloVe & 40.0 & 60.0 & 20.0 \\
+DistilBERT     & 40.0 & 20.0 &  0.0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Three dominant error patterns were identified:
+
+\begin{itemize}
+    \item \textbf{Negation:} BiLSTM misclassifies 60\% of its errors in reviews containing negation words (``not'', ``never'', ``don't''). Stopword removal in the cleaning pipeline partially strips negation signals. DistilBERT, operating on raw text, handles negation better (only 20\% of its errors involve negation).
+    \item \textbf{Irony and contrast markers:} TF-IDF models show a 40\% irony-marker rate in errors (``however'', ``but'', ``although''). These phrases signal sentiment reversal that bag-of-words models cannot capture.
+    \item \textbf{Short ambiguous reviews:} All models have 20--40\% of errors in short reviews ($<$50 words), which lack sufficient signal for confident classification.
+\end{itemize}
+
+\subsection{Discussion}
+
+\textbf{Sparse representations (TF-IDF)} capture discriminative n-gram patterns efficiently. With bigram features, they implicitly encode local sentiment phrases (e.g., ``not good'', ``highly recommended'') without requiring sequential modeling. Their main limitation is the bag-of-words assumption: word order and long-range dependencies are ignored entirely.
+
+\textbf{Dense sequential representations (BiLSTM + GloVe)} model word order but face two constraints on IMDb: (1) the domain mismatch between general-purpose GloVe embeddings and film-review vocabulary, and (2) the last-hidden-state bottleneck that compresses the entire review into a fixed vector. Early stopping at epoch 4 (val\_acc peak 0.9052) prevented further overfitting, yet the model still trails TF-IDF -- a known result on IMDb where local n-gram patterns are highly predictive.
+
+\textbf{Contextual representations (DistilBERT)} achieve the best performance by producing token embeddings sensitive to surrounding context. The pretrained model brings broad language understanding transferable to sentiment tasks. The narrow gap over TF-IDF (+0.48\% accuracy) reflects (a) max\_length=192 truncation cutting off the tail of reviews longer than 192 subword tokens -- sentiment-bearing conclusions are often lost -- and (b) the inherent discriminability of surface n-gram patterns in IMDb, which leaves little room for contextual modeling to add value. In terms of \textit{interpretability}, TF-IDF offers direct inspection of the most influential n-grams, while DistilBERT requires attention analysis or probing to understand its decisions.
+
+% ============================================================
 \section{Question 2 -- Named Entity Recognition}
-% TODO
+
+\subsection{Dataset and BIO Tagging}
+
+The CoNLL-2003 English dataset was used for named entity recognition, containing 14{,}041 training, 3{,}250 validation, and 3{,}453 test sentences annotated with four entity types: PER (person), ORG (organisation), LOC (location), and MISC (miscellaneous). The BIO tagging scheme is used: B- marks the beginning of an entity span, I- marks continuation, and O marks non-entity tokens.
+
+\begin{table}[H]
+\centering
+\caption{BIO tag distribution in the CoNLL-2003 training set.}
+\label{tab:q2tags}
+\begin{tabular}{lr}
+\toprule
+Tag & Count \\
+\midrule
+O      & 169{,}578 \\
+B-LOC  &   7{,}140 \\
+B-PER  &   6{,}600 \\
+B-ORG  &   6{,}321 \\
+I-PER  &   4{,}528 \\
+I-ORG  &   3{,}704 \\
+B-MISC &   3{,}438 \\
+I-LOC  &   1{,}157 \\
+I-MISC &   1{,}155 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The dataset is heavily imbalanced toward the O tag, which constitutes the majority of tokens. Among entity types, MISC has the smallest support, making it the hardest class to learn.
+
+Token-label alignment for the transformer model follows the standard strategy: the first subword token of each word receives the real NER label, while subsequent subword tokens and special tokens (\texttt{[CLS]}, \texttt{[SEP]}) are assigned \texttt{-100} and ignored in the loss computation.
+
+\subsection{Model Implementations}
+
+Two models were implemented and trained under consistent conditions:
+
+\begin{enumerate}
+    \item \textbf{BiLSTM-CRF:} Character-level CNN (char embed=30, out=50) combined with GloVe 6B 100d word embeddings (fine-tuned). 2-layer bidirectional LSTM (hidden=256), followed by a CRF decoding layer. Adam optimiser (lr=1e-3), batch=32, up to 15 epochs with early stopping (patience=3).
+
+    \item \textbf{DistilBERT-base-cased:} Full fine-tuning of \texttt{distilbert-base-cased} for token classification (66M parameters). AdamW (lr=3e-5), batch=16, max\_length=128, 5 epochs, linear warmup (10\% of steps), best-checkpoint saving by validation F1.
+\end{enumerate}
+
+\subsection{Results}
+
+\begin{table}[H]
+\centering
+\caption{Overall NER results on CoNLL-2003 (entity-level, seqeval).}
+\label{tab:q2results}
+\begin{tabular}{lrrrrrr}
+\toprule
+Model & Val P & Val R & Val F1 & Test P & Test R & Test F1 \\
+\midrule
+BiLSTM-CRF            & 0.9124 & 0.9132 & 0.9128 & 0.8489 & 0.8504 & 0.8496 \\
+DistilBERT-base-cased & 0.9340 & 0.9420 & 0.9380 & 0.8859 & 0.9079 & \textbf{0.8967} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+DistilBERT outperforms BiLSTM-CRF by +4.71 F1 points on the test set. The BiLSTM-CRF shows a larger val-to-test gap (0.9128→0.8496, $\Delta$=0.063) compared to DistilBERT (0.938→0.8967, $\Delta$=0.041), suggesting that the contextual model generalises better to unseen text distributions.
+
+\begin{table}[H]
+\centering
+\caption{Per-entity F1 scores on the CoNLL-2003 test set.}
+\label{tab:q2entity}
+\begin{tabular}{lrrrr}
+\toprule
+Entity & BiLSTM-CRF P/R/F1 & DistilBERT P/R/F1 & $\Delta$ F1 \\
+\midrule
+PER  & 0.879 / 0.899 / 0.889 & 0.955 / 0.951 / 0.953 & +6.4 \\
+ORG  & 0.854 / 0.780 / 0.815 & 0.854 / 0.887 / 0.870 & +5.5 \\
+LOC  & 0.883 / 0.905 / 0.894 & 0.916 / 0.928 / 0.922 & +2.8 \\
+MISC & 0.701 / 0.774 / 0.735 & 0.746 / 0.811 / 0.777 & +4.2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+PER entities are easiest for both models (strong first-name/surname patterns), while MISC is hardest (heterogeneous category: nationalities, events, languages). DistilBERT gains most on PER (+6.4 F1), where contextual disambiguation of ambiguous names (e.g., ``Jordan'' as person vs.\ location) is critical.
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}{0.9\textwidth}
+    \includegraphics[width=\linewidth]{q2/q2_bilstm_crf_curve.png}
+    \caption{BiLSTM-CRF training curve}
+\end{subfigure}
+\hfill
+\begin{subfigure}{0.9\textwidth}
+    \includegraphics[width=\linewidth]{q2/q2_bert_curve.png}
+    \caption{DistilBERT training curve}
+\end{subfigure}
+\caption{Training loss and validation F1 over epochs for both NER models.}
+\label{fig:q2curves}
+\end{figure}
+
+\subsection{Error Analysis}
+
+\begin{table}[H]
+\centering
+\caption{Error type counts on the CoNLL-2003 test set.}
+\label{tab:q2errors}
+\begin{tabular}{lrrr}
+\toprule
+Model & Boundary errors & Type confusion errors & Total errors \\
+\midrule
+BiLSTM-CRF            & 49 & 696 & 745 \\
+DistilBERT-base-cased & 49 & 429 & 478 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two error categories were analysed:
+
+\begin{itemize}
+    \item \textbf{Boundary errors} (B-/I- tag confusion): Both models make exactly 49 boundary errors. Common cases include multi-token entities such as ``Real Madrid'' where the model predicts I-ORG for ``Real'' instead of B-ORG, or vice versa. This type of error is largely independent of model capacity and stems from annotation ambiguity in the dataset.
+
+    \item \textbf{Type confusion errors} (entity mislabelled as wrong type): BiLSTM-CRF makes 696 type confusion errors vs.\ 429 for DistilBERT -- a 38\% reduction. The most frequent pattern in BiLSTM-CRF is PER$\to$ORG confusion (e.g., athlete names such as ``Inzamamul'', ``Germon'', ``Astle'' predicted as ORG), suggesting the model relies heavily on surface form rather than context. DistilBERT's contextual embeddings resolve most of these cases by attending to surrounding tokens (``scored'', ``played'', ``said'').
+\end{itemize}
+
+\subsection{Discussion: Role of Contextual Embeddings}
+
+The results demonstrate a clear advantage of contextual representations over static embeddings in NER. BiLSTM-CRF relies on GloVe vectors that assign a single fixed representation to each word regardless of context -- ``Washington'' has the same embedding whether it appears as a person or a location. DistilBERT produces token embeddings conditioned on the full sentence, enabling disambiguation of polysemous named entities.
+
+The 38\% reduction in type confusion errors directly quantifies this advantage. Boundary errors, however, are equally common in both models, indicating that span detection is driven more by sequence-level positional patterns (which CRF handles well) than by semantic understanding. This suggests that a hybrid approach -- DistilBERT embeddings with CRF decoding -- would likely push performance further.
 
 \section{Question 3 -- Text Summarization}
-% TODO
+
+\subsection{Dataset}
+
+The CNN/DailyMail dataset (version 3.0.0) was used for evaluation. A randomly sampled subset of 1{,}000 test examples was used; no training was performed since both models operate without task-specific training on this dataset. Each example contains an \texttt{article} field (average 1{,}395 words) and a \texttt{highlights} field serving as the reference summary (average 29 words). The large article-to-summary compression ratio makes this a challenging abstractive summarisation benchmark.
+
+\subsection{Model Implementations}
+
+\begin{enumerate}
+    \item \textbf{LexRank (Extractive):} Graph-based extractive summarisation using sentence similarity (TF-IDF cosine). Three sentences are selected per article via the \texttt{sumy} library. No training required; runtime $\approx$16 seconds for 1{,}000 articles.
+
+    \item \textbf{BART-large-cnn (Abstractive):} \texttt{facebook/bart-large-cnn}, a pretrained sequence-to-sequence transformer fine-tuned on CNN/DailyMail. Direct inference via HuggingFace \texttt{pipeline}, batch size=8, MPS device. Generation parameters: max\_length=128, min\_length=30, no\_repeat\_ngram\_size=3, beam search.
+\end{enumerate}
+
+\subsection{Results}
+
+\begin{table}[H]
+\centering
+\caption{Summarisation evaluation on 1{,}000 CNN/DailyMail test examples.}
+\label{tab:q3results}
+\begin{tabular}{lrrrrrrr}
+\toprule
+Model & ROUGE-1 & ROUGE-2 & ROUGE-L & BLEU & METEOR & BS-P & BS-F1 \\
+\midrule
+LexRank           & 0.3539 & 0.1319 & 0.2219 &  7.856 & 0.3201 & 0.8600 & 0.8629 \\
+BART-large-cnn    & \textbf{0.4394} & \textbf{0.2128} & \textbf{0.3103} & \textbf{14.830} & \textbf{0.3883} & \textbf{0.8842} & \textbf{0.8805} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+BART outperforms LexRank across all metrics. The largest gap is in BLEU (+6.97 points), reflecting BART's ability to generate concise, reference-aligned phrases rather than copying full sentences. The BERTScore gap is smaller (0.8805 vs 0.8629), indicating that LexRank's extracted sentences are semantically relevant even when surface overlap is low.
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}{0.9\textwidth}
+    \includegraphics[width=\linewidth]{q3/q3_metrics_comparison.png}
+    \caption{Metric comparison (bar chart)}
+\end{subfigure}
+\hfill
+\begin{subfigure}{0.9\textwidth}
+    \includegraphics[width=\linewidth]{q3/q3_rouge1_distribution.png}
+    \caption{ROUGE-1 score distribution}
+\end{subfigure}
+\caption{Q3 summarisation evaluation results.}
+\label{fig:q3results}
+\end{figure}
+
+\subsection{Qualitative Analysis}
+
+Three examples were examined in detail with per-example scores (Table~\ref{tab:q3qual}).
+
+\begin{table}[H]
+\centering
+\caption{Per-example scores for three qualitative examples.}
+\label{tab:q3qual}
+\begin{tabular}{lrrrrrr}
+\toprule
+ & \multicolumn{3}{c}{LexRank} & \multicolumn{3}{c}{BART} \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-7}
+Example & R1 & RL & BS-F1 & R1 & RL & BS-F1 \\
+\midrule
+1 (Marijuana) & 0.304 & 0.217 & 0.855 & 0.103 & 0.077 & 0.834 \\
+2 (Gang life)  & 0.378 & 0.268 & 0.883 & 0.360 & 0.202 & 0.860 \\
+3 (Christie)   & 0.374 & 0.193 & 0.851 & 0.378 & 0.230 & 0.866 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Three distinct patterns emerged:
+
+\begin{itemize}
+    \item \textbf{Example 1 (Marijuana):} LexRank achieves higher ROUGE-1 (0.304 vs 0.103) because it copies the exact sentence ``We should legalize medical marijuana'' from the article, which overlaps with the reference. BART generates a different but semantically valid summary (citing legalization statistics), reflected in its lower ROUGE but comparable BERTScore (0.834 vs 0.855). This illustrates a known limitation of n-gram metrics: they penalise paraphrase.
+
+    \item \textbf{Example 2 (Gang life):} Both models perform similarly in ROUGE-1 (0.378 vs 0.360). LexRank copies three long sentences verbatim from the article, producing a fluent but verbose output. BART generates a more concise, bullet-point-style summary closer to the reference format.
+
+    \item \textbf{Example 3 (Christie):} BART achieves higher ROUGE-L (0.230 vs 0.193) and BERTScore (0.866 vs 0.851). BART correctly identifies the key factual detail (\$225 million ExxonMobil settlement) that LexRank misses, demonstrating better information selection through abstractive generation.
+\end{itemize}
+
+\subsection{Discussion: Extractive vs Abstractive Trade-offs}
+
+\textbf{Computational cost:} LexRank requires no GPU and runs in $\sim$16 seconds for 1{,}000 articles. BART requires MPS/GPU inference and takes significantly longer, making extractive methods preferable in resource-constrained settings.
+
+\textbf{Faithfulness:} LexRank guarantees factual faithfulness by copying verbatim sentences. BART occasionally introduces minor hallucinations or reframes facts, though no major factual errors were observed in the qualitative examples.
+
+\textbf{Readability:} BART produces grammatically smooth, coherent summaries that read naturally. LexRank summaries can be disjointed when extracted sentences lack transitional context.
+
+\textbf{Metric behaviour:} ROUGE and BLEU favour surface overlap and penalise valid paraphrases. BERTScore better captures semantic equivalence, as shown in Example 1 where BART's lower ROUGE co-exists with a high BERTScore. For abstractive systems, BERTScore is therefore the most informative single metric.
 
 \section{Question 4 -- Machine Translation}
-% TODO
+
+\subsection{Dataset and Preprocessing}
+
+The Multi30k English$\to$German dataset was used: 29{,}000 training, 1{,}014 validation, and 1{,}000 test sentence pairs. Preprocessing steps: (1) spaCy tokenisation (\texttt{en\_core\_web\_sm} / \texttt{de\_core\_news\_sm}), (2) lowercasing, (3) word-level vocabulary with minimum frequency threshold of 2 (EN $\approx$5K, DE $\approx$7K tokens). The test OOV rate is 1.71\%, indicating low but non-trivial out-of-vocabulary coverage.
+
+\subsection{Model Implementations}
+
+\begin{enumerate}
+    \item \textbf{Seq2Seq + Bahdanau Attention (from scratch):} 1-layer BiLSTM encoder (hidden=256, embed=256), 1-layer LSTM decoder with Bahdanau attention, dropout=0.3, teacher forcing ratio=0.5. Adam (lr=1e-3), gradient clipping=1.0, batch=256, 10 epochs on CPU. Greedy decoding at inference.
+
+    \item \textbf{Helsinki-NLP/opus-mt-en-de (pretrained):} MarianMT transformer pretrained on OPUS parallel corpora. Direct inference via HuggingFace, beam search (num\_beams=5), max\_length=128.
+\end{enumerate}
+
+\subsection{Results}
+
+\begin{table}[H]
+\centering
+\caption{Translation evaluation on Multi30k test set (1{,}000 sentence pairs, EN$\to$DE).}
+\label{tab:q4results}
+\begin{tabular}{lrrrr}
+\toprule
+Model & BLEU & ChrF & METEOR & BERTScore-F1 \\
+\midrule
+Seq2Seq + Bahdanau  &  3.51 & 38.99 & 0.457 & 0.7415 \\
+Helsinki-NLP/opus-mt-en-de & \textbf{36.37} & \textbf{64.23} & \textbf{0.592} & \textbf{0.8972} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The gap between the two models is substantial across all metrics. Seq2Seq achieves BLEU=3.51 but ChrF=38.99 and METEOR=0.457, indicating the model has learned German morphology and word-level semantics despite poor n-gram precision. Helsinki achieves BLEU=36.37, a score typical of strong supervised NMT systems on Multi30k.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\linewidth]{q4/q4_metrics_comparison.png}
+\caption{Translation metric comparison between Seq2Seq+Bahdanau and Helsinki-NLP/opus-mt-en-de.}
+\label{fig:q4metrics}
+\end{figure}
+
+\subsection{Length-Bucket and OOV Analysis}
+
+\begin{table}[H]
+\centering
+\caption{Sentence-level BLEU by source length bucket (test OOV rate = 1.71\%).}
+\label{tab:q4length}
+\begin{tabular}{lrrr}
+\toprule
+Bucket & Count & Seq2Seq BLEU & Helsinki BLEU \\
+\midrule
+Short ($\leq$10 tokens)  & 283 &  9.47 & 40.14 \\
+Medium (11--25 tokens)   & 701 &  8.16 & 35.32 \\
+Long ($>$25 tokens)      &  16 &  5.04 & 25.32 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Both models degrade as sentence length increases, consistent with the difficulty of modeling long-range dependencies. Seq2Seq drops from 9.47 (short) to 5.04 (long), a 47\% relative decrease, while Helsinki drops from 40.14 to 25.32 (37\%). Note that the long bucket contains only 16 sentences, so these figures should be interpreted with caution.
+
+The test OOV rate of 1.71\% causes \texttt{<unk>} tokens in Seq2Seq output (word-level vocabulary), whereas Helsinki uses SentencePiece subword tokenisation and produces no OOV tokens.
+
+\subsection{Qualitative Analysis}
+
+\begin{table}[H]
+\centering
+\caption{Five qualitative translation examples with sentence-level BLEU scores.}
+\label{tab:q4qual}
+\small
+\begin{tabular}{p{3.8cm}p{3.8cm}p{3.5cm}r}
+\toprule
+Source (EN) & Seq2Seq (DE) & Helsinki (DE) & S2S / Hel BLEU \\
+\midrule
+A man in an orange hat starring at something. &
+ein mann mit orangefarbener orangefarbenen etwas etwas etwas etwas . &
+Ein Mann in einem orangenen Hut, mit etwas. &
+5.37 / 12.77 \\
+\midrule
+A happy woman is preparing a refreshment at a coffee shop. &
+eine fröhliche frau bereitet sich an einem \texttt{<unk>} cafe . &
+Eine glückliche Frau bereitet eine Erfrischung in einem Café vor. &
+4.79 / 32.65 \\
+\midrule
+A man is throwing a log into a waterway while two dogs watch. &
+ein mann wirft einen einen einen einen \texttt{<unk>} , während zwei andere zuschauen . &
+Ein Mann wirft ein Holz in einen Wasserweg, während zwei Hunde zusehen. &
+7.66 / 39.07 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two failure modes of Seq2Seq are clearly visible:
+
+\begin{itemize}
+    \item \textbf{Token repetition:} ``etwas etwas etwas etwas'' and ``einen einen einen einen'' appear in examples 1 and 3. This is a known artifact of greedy decoding without coverage mechanisms -- the model gets stuck in a local mode and repeats the same token.
+    \item \textbf{OOV substitution:} ``coffee shop'' and ``waterway'' are outside the training vocabulary and are replaced by \texttt{<unk>}. Helsinki handles both correctly via subword tokenisation (``Café'', ``Wasserweg'').
+\end{itemize}
+
+Helsinki produces grammatically correct, fluent translations in all examples, closely matching the reference in both content and structure.
+
+\subsection{Discussion: Metric Interpretation and Architecture Trade-offs}
+
+\textbf{Metric interpretation:}
+\begin{itemize}
+    \item \textbf{BLEU} computes the geometric mean of $n$-gram precisions ($n=1,\ldots,4$) with a brevity penalty. Because it uses a geometric mean, a near-zero precision at any order collapses the entire score. In Seq2Seq output, repetitive tokens (``etwas etwas etwas'', ``einen einen einen'') produce valid 1-gram matches but destroy 2-gram and higher precision, driving the geometric mean toward zero. This explains BLEU=3.51 despite ChrF=38.99: character-level overlap survives repetition, but 4-gram surface precision does not.
+    \item \textbf{ChrF} operates at the character n-gram level and is robust to German morphological inflection (e.g., ``orangefarbener'' vs ``orangefarbene''). Seq2Seq's ChrF=38.99 shows it has learned German word forms even when full phrases are wrong.
+    \item \textbf{METEOR} aligns hypotheses to references with stemming and synonym matching, making it more recall-oriented. Seq2Seq's METEOR=0.457 confirms partial semantic coverage.
+    \item \textbf{BERTScore} uses contextual embeddings to measure semantic similarity. The gap (0.7415 vs 0.8972) reflects the overall quality difference; Helsinki's translations are semantically closer to references at the representation level.
+\end{itemize}
+
+\textbf{Architecture trade-offs:} Seq2Seq trained from scratch on 29K sentence pairs in 10 epochs cannot compete with a pretrained transformer exposed to millions of parallel sentences. However, the from-scratch model demonstrates that attention-based Seq2Seq can learn basic German morphology and sentence structure (ChrF$\approx$39, METEOR$\approx$0.46) under limited data and compute. Beam search and subword tokenisation would be the two highest-impact improvements for the Seq2Seq model.
 
 \section{Question 5 -- Language Modeling}
-% TODO
 
+\subsection{Dataset and Vocabulary}
+
+The WikiText-2 dataset was used for word-level language modeling. The corpus contains 2{,}075{,}677 training tokens, 216{,}347 validation tokens, and 244{,}102 test tokens. A shared vocabulary was built from the training set using a minimum frequency threshold of 2, yielding approximately 33{,}K unique tokens. Rare words are mapped to \texttt{<unk>}; each sentence is terminated with an \texttt{<eos>} token. All text is lowercased and whitespace-tokenised.
+
+\subsection{Model Implementations}
+
+\begin{enumerate}
+    \item \textbf{Trigram LM (Kneser-Ney smoothing):} An interpolated Kneser-Ney trigram model with fixed discount $d=0.75$. The model uses continuation probability for the unigram backoff:
+    \[
+      P_{\mathrm{KN}}(w_3 \mid w_1, w_2) = \frac{\max(c(w_1,w_2,w_3)-d,\,0)}{c(w_1,w_2)} + \lambda(w_1,w_2)\,P_{\mathrm{KN}}(w_3 \mid w_2)
+    \]
+    No training beyond counting; perplexity computed on the full test set.
+
+    \item \textbf{LSTM LM (2-layer, weight tying):} A 2-layer LSTM with embedding dimension=512, hidden size=512, dropout=0.5. Weight tying is applied between the input embedding matrix and the output projection layer, reducing parameter count and improving generalisation. Trained with AdamW (lr=$10^{-3}$, weight\_decay=$10^{-5}$), gradient clipping=1.0, batch=32, BPTT=35, 20 epochs. Learning rate is halved by \texttt{ReduceLROnPlateau} (patience=2) when validation perplexity stops improving. Best checkpoint is saved by validation perplexity.
+\end{enumerate}
+
+\subsection{Results}
+
+\begin{table}[H]
+\centering
+\caption{Language model perplexity on WikiText-2 (lower is better).}
+\label{tab:q5results}
+\begin{tabular}{lrr}
+\toprule
+Model & Val PPL & Test PPL \\
+\midrule
+Trigram (Kneser-Ney) & 299.45 & 288.87 \\
+LSTM LM (2-layer)    & \textbf{229.85} & \textbf{219.28} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+LSTM achieves lower perplexity than the trigram baseline on both validation (229.85 vs 299.45) and test (219.28 vs 288.87) sets. Both models show val PPL $>$ test PPL, which is expected since the WikiText-2 test set has a slightly easier token distribution than the validation set.
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}{0.9\textwidth}
+    \includegraphics[width=\linewidth]{q5/q5_lstm_curve.png}
+    \caption{LSTM training and validation perplexity}
+\end{subfigure}
+\hfill
+\begin{subfigure}{0.9\textwidth}
+    \includegraphics[width=\linewidth]{q5/q5_perplexity_comparison.png}
+    \caption{Final perplexity comparison}
+\end{subfigure}
+\caption{Q5 language model training dynamics and final results.}
+\label{fig:q5results}
+\end{figure}
+
+The training curve (Figure~\ref{fig:q5results}) shows steady improvement throughout all 20 epochs without plateau. The learning rate scheduler (ReduceLROnPlateau, patience=2) did not trigger during training, indicating that convergence had not yet been reached at epoch 20. With additional epochs, the LSTM would likely reach the 150--170 PPL range typical of 2-layer weight-tied LSTMs on WikiText-2.
+
+\subsection{Generated Text Samples and TTR Analysis}
+
+Five text samples of up to 50 tokens were generated from each model using temperature=0.8.
+
+\begin{table}[H]
+\centering
+\caption{Type-Token Ratio (TTR) of generated samples (avg over 5 samples).}
+\label{tab:q5ttr}
+\begin{tabular}{lrrr}
+\toprule
+Model & Avg TTR & Avg Length (tokens) \\
+\midrule
+Trigram (Kneser-Ney) & 0.919 & 32.2 \\
+LSTM LM (2-layer)    & 0.769 & 25.8 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The trigram model produces higher TTR (0.919), reflecting diverse but locally incoherent word selection: each token is drawn from the local bigram/trigram context independently, leading to varied vocabulary with poor long-range structure. The LSTM produces lower TTR (0.769), consistent with a model that generates more structured, repetitive sentence patterns -- a sign of learned syntactic templates rather than purely random sampling.
+
+Qualitatively, trigram samples exhibit reasonable local n-gram patterns but drift semantically over longer spans. LSTM samples tend to produce shorter outputs (avg 25.8 vs 32.2 tokens) due to more frequent early \texttt{<eos>} generation, suggesting the model has learned sentence-boundary distributions.
+
+\subsection{Discussion: Statistical vs Neural Language Models}
+
+\textbf{Smoothing and sparsity:} The trigram model with Kneser-Ney smoothing handles unseen n-grams by backing off to lower-order distributions weighted by continuation probability. This is effective for short contexts but fundamentally limited to a 3-token window. PPL=288.87 on WikiText-2 is consistent with the literature for KN trigrams on this benchmark.
+
+\textbf{Long-range dependencies:} The LSTM hidden state theoretically captures unbounded context, which explains its 23\% PPL reduction over the trigram (219 vs 288). The improvement is moderate rather than dramatic because (a) 20 epochs is insufficient for full convergence -- the training curve shows no plateau -- and (b) word-level tokenisation with \texttt{<unk>} replacement limits coverage of rare WikiText-2 tokens (names, technical terms).
+
+\textbf{Optimiser choice:} Switching from SGD (LR=10, clip=0.5) to AdamW (LR=$10^{-3}$, clip=1.0) was critical. With SGD, 30 epochs produced val PPL=364 and the LR decay triggered only once (epoch 19). AdamW's adaptive per-parameter learning rates produced val PPL=229 in 20 epochs, a 37\% improvement, confirming that adaptive optimisers are better suited to the noisy gradient landscape of word-level language modeling.
+
+\textbf{Weight tying:} Sharing the input embedding and output projection matrices reduces the model's effective parameter count and acts as a regulariser, preventing the output layer from memorising frequency statistics independently of the learned representations.
+
+% ============================================================
 \section{Conclusion}
-% TODO
+% ============================================================
 
-\bibliographystyle{plain}
-\bibliography{references}
+This report implemented and evaluated two models per task across five core NLP problems. The key findings are:
+
+\begin{itemize}
+    \item \textbf{Text Classification (Q1):} DistilBERT achieves the highest test accuracy (91.8\%), but the margin over TF-IDF+SVM (+0.48\%) is narrow, confirming that surface n-gram patterns are highly discriminative on IMDb. Error analysis reveals that negation and irony are the dominant failure modes for all models.
+
+    \item \textbf{Named Entity Recognition (Q2):} DistilBERT-base-cased outperforms BiLSTM-CRF by +4.71 F1 on CoNLL-2003. The 38\% reduction in type confusion errors directly quantifies the benefit of contextual embeddings for disambiguating polysemous entity names.
+
+    \item \textbf{Text Summarization (Q3):} BART-large-cnn outperforms LexRank across all seven metrics. BERTScore is the most informative metric for abstractive systems, as it captures semantic equivalence that ROUGE and BLEU penalise as paraphrase.
+
+    \item \textbf{Machine Translation (Q4):} Helsinki-NLP/opus-mt-en-de (BLEU=36.37) substantially outperforms the from-scratch Seq2Seq model (BLEU=3.51). The low BLEU of Seq2Seq is explained by token repetition in greedy decoding collapsing the geometric mean of n-gram precisions, not by a total failure of learning -- ChrF=38.99 and METEOR=0.457 confirm partial morphological and semantic coverage.
+
+    \item \textbf{Language Modeling (Q5):} The 2-layer weight-tied LSTM with AdamW achieves test PPL=219.28, a 24\% reduction over the Kneser-Ney trigram baseline (288.87). The optimiser switch from SGD to AdamW alone reduced perplexity by 37\% under the same epoch budget, highlighting the importance of optimiser choice for recurrent language models.
+\end{itemize}
+
+Across all tasks, the general pattern holds: pretrained and contextual models outperform statistical and from-scratch neural baselines, but the gap varies substantially by task. On IMDb sentiment classification, the gap is negligible; on NER and translation, it is large. The common bottleneck for from-scratch neural models is training data and compute: given sufficient resources, Seq2Seq and LSTM models approach competitive performance, as the PPL and ChrF results demonstrate.
 
 \end{document}

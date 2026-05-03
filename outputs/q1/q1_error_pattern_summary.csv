@@ -1,0 +1,5 @@
+model,total_errors,short_reviews_%,long_reviews_%,negation_%,irony_marker_%
+BiLSTM+GloVe,5,40.0,0.0,60.0,20.0
+DistilBERT,5,40.0,0.0,20.0,0.0
+TF-IDF+LR,5,40.0,0.0,40.0,40.0
+TF-IDF+SVM,5,20.0,0.0,40.0,40.0

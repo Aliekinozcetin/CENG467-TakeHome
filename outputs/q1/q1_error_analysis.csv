@@ -1,0 +1,21 @@
+model,true,predicted,word_count,length_bucket,has_negation,has_irony_marker
+TF-IDF+LR,Negative,Positive,54,medium (50-200),True,False
+TF-IDF+LR,Negative,Positive,46,short (<50),False,False
+TF-IDF+LR,Negative,Positive,55,medium (50-200),False,True
+TF-IDF+LR,Negative,Positive,45,short (<50),False,True
+TF-IDF+LR,Positive,Negative,55,medium (50-200),True,False
+TF-IDF+SVM,Negative,Positive,54,medium (50-200),True,False
+TF-IDF+SVM,Negative,Positive,52,medium (50-200),False,False
+TF-IDF+SVM,Negative,Positive,55,medium (50-200),False,True
+TF-IDF+SVM,Negative,Positive,52,medium (50-200),True,False
+TF-IDF+SVM,Negative,Positive,45,short (<50),False,True
+BiLSTM+GloVe,Negative,Positive,46,short (<50),False,False
+BiLSTM+GloVe,Negative,Positive,43,short (<50),True,False
+BiLSTM+GloVe,Negative,Positive,52,medium (50-200),False,False
+BiLSTM+GloVe,Positive,Negative,57,medium (50-200),True,True
+BiLSTM+GloVe,Negative,Positive,52,medium (50-200),True,False
+DistilBERT,Positive,Negative,58,medium (50-200),False,False
+DistilBERT,Negative,Positive,47,short (<50),False,False
+DistilBERT,Positive,Negative,46,short (<50),False,False
+DistilBERT,Positive,Negative,54,medium (50-200),False,False
+DistilBERT,Negative,Positive,53,medium (50-200),True,False

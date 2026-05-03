@@ -112,16 +112,16 @@ bart_pipe = pipeline(
     "summarization",
     model=BART_MODEL,
     device=device_str,
-    torch_dtype=torch.float32,
-    tokenizer_kwargs={"model_max_length": BART_MAX_INPUT},
+    dtype=torch.float32,
+    model_kwargs={"max_position_embeddings": BART_MAX_INPUT},
 )
 
 def bart_summarize_batch(texts, batch_size=BART_BATCH):
     summaries = []
     for i in tqdm(range(0, len(texts), batch_size), desc="  BART"):
         batch = texts[i : i + batch_size]
-        # Truncate to avoid token limit
-        batch_trunc = [t[:4000] for t in batch]
+        # Character-level truncation to stay within BART's 1024 token limit
+        batch_trunc = [t[:3500] for t in batch]
         outs = bart_pipe(
             batch_trunc,
             max_length=BART_MAX_TARGET,
@@ -219,14 +219,27 @@ print("  Saved: outputs/q3/q3_metrics_comparison.png")
 # ---------------------------------------------------------------------------
 print("\n3.10  Qualitative examples…")
 
+def quick_scores(hyp, ref):
+    r = scorer_rouge.score(ref, hyp)
+    _, _, f = bert_score_lib.score([hyp], [ref], lang="en", device=device_str, verbose=False)
+    return round(r["rouge1"].fmeasure, 4), round(r["rougeL"].fmeasure, 4), round(f.mean().item(), 4)
+
 qual_rows = []
 for i in range(3):
+    lr_r1, lr_rl, lr_bs = quick_scores(lexrank_summaries[i], references[i])
+    ba_r1, ba_rl, ba_bs = quick_scores(bart_summaries[i],    references[i])
     qual_rows.append({
-        "idx":        i,
-        "article":    articles[i][:500],
-        "reference":  references[i],
-        "lexrank":    lexrank_summaries[i],
-        "bart":       bart_summaries[i],
+        "idx":               i,
+        "article":           articles[i][:500],
+        "reference":         references[i],
+        "lexrank":           lexrank_summaries[i],
+        "bart":              bart_summaries[i],
+        "lexrank_rouge1":    lr_r1,
+        "lexrank_rougeL":    lr_rl,
+        "lexrank_bertscore": lr_bs,
+        "bart_rouge1":       ba_r1,
+        "bart_rougeL":       ba_rl,
+        "bart_bertscore":    ba_bs,
     })
 
 qual_df = pd.DataFrame(qual_rows)
@@ -237,7 +250,9 @@ for i, row in qual_df.iterrows():
     print(f"\n  --- Example {i+1} ---")
     print(f"  REFERENCE : {row['reference'][:200]}")
     print(f"  LEXRANK   : {row['lexrank'][:200]}")
+    print(f"             R1={row['lexrank_rouge1']} | RL={row['lexrank_rougeL']} | BS={row['lexrank_bertscore']}")
     print(f"  BART      : {row['bart'][:200]}")
+    print(f"             R1={row['bart_rouge1']} | RL={row['bart_rougeL']} | BS={row['bart_bertscore']}")
 
 # ---------------------------------------------------------------------------
 # Per-example ROUGE to visualise distribution

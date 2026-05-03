@@ -1,6 +1,6 @@
 """
 Q1 – Text Classification (Representation Learning)
-IMDb sentiment classification: TF-IDF+LR, TF-IDF+SVM, BiLSTM, BERT-base-uncased
+IMDb sentiment classification: TF-IDF+LR, TF-IDF+SVM, BiLSTM, DistilBERT-base-uncased
 """
 
 import os
@@ -31,7 +31,7 @@ from sklearn.svm import LinearSVC
 from sklearn.metrics import accuracy_score, f1_score, confusion_matrix, classification_report
 
 from transformers import (
-    BertTokenizer, BertForSequenceClassification,
+    DistilBertTokenizer, DistilBertForSequenceClassification,
     get_linear_schedule_with_warmup
 )
 from torch.optim import AdamW
@@ -46,7 +46,7 @@ set_seed(SEED)
 TRAIN_SIZE = 45000
 VAL_SIZE   = 2500
 TEST_SIZE  = 2500
-BATCH_SIZE_BERT = 16
+BATCH_SIZE_BERT = 8
 BATCH_SIZE_LSTM = 64
 LSTM_EPOCHS = 10
 BERT_EPOCHS = 3
@@ -56,8 +56,8 @@ HIDDEN_DIM  = 256
 NUM_LAYERS  = 2
 DROPOUT     = 0.3
 LR_LSTM     = 1e-3
-LR_BERT     = 2e-5
-MAX_LEN_BERT = 128          # reduced from 512 for MPS memory
+LR_BERT     = 3e-5
+MAX_LEN_BERT = 192
 os.makedirs("outputs/q1", exist_ok=True)
 
 # ---------------------------------------------------------------------------
@@ -114,7 +114,7 @@ test_labels  = list(test_ds["label"])
 # Strategy A: word-level split  |  Strategy B: BERT WordPiece
 # ---------------------------------------------------------------------------
 print("1.4  Tokenization strategy comparison…")
-bert_tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+bert_tokenizer = DistilBertTokenizer.from_pretrained("distilbert-base-uncased")
 
 sample = train_texts_clean[0][:200]
 tokens_a = sample.split()
@@ -316,6 +316,10 @@ def evaluate_loader(model, loader):
     return accuracy_score(trues, preds), f1_score(trues, preds, average="macro"), preds, trues
 
 lstm_train_losses, lstm_val_accs = [], []
+LSTM_CKPT      = "outputs/q1/bilstm_best.pt"
+EARLY_STOP     = 3          # stop if no improvement for 3 consecutive epochs
+best_val_acc_lstm = 0.0
+no_improve     = 0
 
 print("  Training BiLSTM…")
 for epoch in range(1, LSTM_EPOCHS + 1):
@@ -332,9 +336,25 @@ for epoch in range(1, LSTM_EPOCHS + 1):
     val_acc, val_f1, _, _ = evaluate_loader(lstm_model, val_loader_lstm)
     lstm_train_losses.append(avg_loss)
     lstm_val_accs.append(val_acc)
-    print(f"  Epoch {epoch:02d} — loss: {avg_loss:.4f} | val_acc: {val_acc:.4f} | val_f1: {val_f1:.4f}")
 
-lstm_val_acc, lstm_val_f1, _, _         = evaluate_loader(lstm_model, val_loader_lstm)
+    marker = ""
+    if val_acc > best_val_acc_lstm:
+        best_val_acc_lstm = val_acc
+        torch.save(lstm_model.state_dict(), LSTM_CKPT)
+        no_improve = 0
+        marker = " ✓"
+    else:
+        no_improve += 1
+
+    print(f"  Epoch {epoch:02d} — loss: {avg_loss:.4f} | val_acc: {val_acc:.4f} | val_f1: {val_f1:.4f}{marker}")
+
+    if no_improve >= EARLY_STOP:
+        print(f"  Early stopping at epoch {epoch} (no improvement for {EARLY_STOP} epochs)")
+        break
+
+# Load best checkpoint for evaluation
+lstm_model.load_state_dict(torch.load(LSTM_CKPT, map_location=device))
+lstm_val_acc, lstm_val_f1, _, _                      = evaluate_loader(lstm_model, val_loader_lstm)
 lstm_test_acc, lstm_test_f1, lstm_test_preds, _ = evaluate_loader(lstm_model, test_loader_lstm)
 print(f"  Val  — Acc: {lstm_val_acc:.4f} | Macro-F1: {lstm_val_f1:.4f}")
 print(f"  Test — Acc: {lstm_test_acc:.4f} | Macro-F1: {lstm_test_f1:.4f}")
@@ -351,9 +371,9 @@ plt.close()
 # 1.9 — Model 4: BERT-base-uncased fine-tuning
 # ---------------------------------------------------------------------------
 print("\n" + "=" * 60)
-print("1.9  BERT-base-uncased fine-tuning…")
+print("1.9  DistilBERT-base-uncased fine-tuning…")
 
-BERT_CKPT = "outputs/q1/bert_best.pt"
+BERT_CKPT = "outputs/q1/distilbert_best.pt"
 
 class IMDbBertDataset(Dataset):
     def __init__(self, texts, labels, tokenizer, max_len):
@@ -387,15 +407,15 @@ train_loader_bert = DataLoader(train_bert_ds, batch_size=BATCH_SIZE_BERT, shuffl
 val_loader_bert   = DataLoader(val_bert_ds,   batch_size=BATCH_SIZE_BERT, shuffle=False, num_workers=0)
 test_loader_bert  = DataLoader(test_bert_ds,  batch_size=BATCH_SIZE_BERT, shuffle=False, num_workers=0)
 
-bert_model = BertForSequenceClassification.from_pretrained(
-    "bert-base-uncased", num_labels=2
+bert_model = DistilBertForSequenceClassification.from_pretrained(
+    "distilbert-base-uncased", num_labels=2
 ).to(device)
 
 optimizer_bert = AdamW(bert_model.parameters(), lr=LR_BERT)
 total_steps    = len(train_loader_bert) * BERT_EPOCHS
 scheduler_bert = get_linear_schedule_with_warmup(
     optimizer_bert,
-    num_warmup_steps=int(0.1 * total_steps),
+    num_warmup_steps=int(0.06 * total_steps),
     num_training_steps=total_steps,
 )
 
@@ -415,7 +435,7 @@ def evaluate_bert(model, loader):
 bert_train_losses, bert_val_accs = [], []
 best_val_acc = 0.0
 
-print("  Training BERT…")
+print("  Training DistilBERT…")
 for epoch in range(1, BERT_EPOCHS + 1):
     bert_model.train()
     total_loss = 0.0
@@ -468,7 +488,7 @@ results = pd.DataFrame([
      "Test Acc": svm_test_acc,"Test F1": svm_test_f1},
     {"Model": "BiLSTM+GloVe", "Val Acc": lstm_val_acc, "Val F1": lstm_val_f1,
      "Test Acc": lstm_test_acc,"Test F1": lstm_test_f1},
-    {"Model": "BERT-base",    "Val Acc": bert_val_acc, "Val F1": bert_val_f1,
+    {"Model": "DistilBERT",   "Val Acc": bert_val_acc, "Val F1": bert_val_f1,
      "Test Acc": bert_test_acc,"Test F1": bert_test_f1},
 ])
 results = results.round(4)
@@ -494,7 +514,7 @@ def plot_cm(preds, trues, title, fname):
 plot_cm(lr_test_preds,   test_labels, "TF-IDF + LR",  "outputs/q1/q1_cm_lr.png")
 plot_cm(svm_test_preds,  test_labels, "TF-IDF + SVM", "outputs/q1/q1_cm_svm.png")
 plot_cm(lstm_test_preds, test_labels, "BiLSTM+GloVe", "outputs/q1/q1_cm_bilstm.png")
-plot_cm(bert_test_preds, test_labels, "BERT-base",    "outputs/q1/q1_cm_bert.png")
+plot_cm(bert_test_preds, test_labels, "DistilBERT",   "outputs/q1/q1_cm_bert.png")
 print("  Saved confusion matrices to outputs/")
 
 # ---------------------------------------------------------------------------
@@ -518,10 +538,10 @@ def get_misclassified(preds, trues, texts, model_name, n=10):
 
 test_texts_raw = list(test_ds["text"])
 misclassified = []
-misclassified += get_misclassified(lr_test_preds,   test_labels, test_texts_raw, "TF-IDF+LR")
-misclassified += get_misclassified(svm_test_preds,  test_labels, test_texts_raw, "TF-IDF+SVM")
-misclassified += get_misclassified(lstm_test_preds, test_labels, test_texts_raw, "BiLSTM+GloVe")
-misclassified += get_misclassified(bert_test_preds, test_labels, test_texts_raw, "BERT-base")
+misclassified += get_misclassified(lr_test_preds,   test_labels, test_texts_raw, "TF-IDF+LR",    n=5)
+misclassified += get_misclassified(svm_test_preds,  test_labels, test_texts_raw, "TF-IDF+SVM",   n=5)
+misclassified += get_misclassified(lstm_test_preds, test_labels, test_texts_raw, "BiLSTM+GloVe", n=5)
+misclassified += get_misclassified(bert_test_preds, test_labels, test_texts_raw, "DistilBERT",   n=5)
 
 misc_df = pd.DataFrame(misclassified)
 misc_df.to_csv("outputs/q1/q1_misclassified.csv", index=False)
@@ -532,5 +552,65 @@ print("\n  Sample misclassified (first 5):")
 for _, row in misc_df.head(5).iterrows():
     print(f"  [{row['model']}] True={row['true']}, Pred={row['predicted']}")
     print(f"    Text: {row['text'][:120]}…\n")
+
+# ---------------------------------------------------------------------------
+# 1.13b — Common error pattern analysis
+# Patterns: short review, long review, negation keywords, irony markers
+# ---------------------------------------------------------------------------
+print("1.13b  Common error pattern analysis…")
+
+NEGATION_WORDS  = {"not", "no", "never", "neither", "nor", "nothing", "nobody",
+                   "nowhere", "hardly", "barely", "scarcely", "doesn't", "isn't",
+                   "wasn't", "weren't", "haven't", "hadn't", "won't", "wouldn't",
+                   "don't", "didn't", "can't", "couldn't", "shouldn't"}
+IRONY_MARKERS   = {"but", "however", "although", "though", "despite", "yet",
+                   "nevertheless", "supposedly", "apparently", "pretend", "claim"}
+
+def detect_patterns(text: str) -> dict:
+    words      = text.lower().split()
+    word_count = len(words)
+    word_set   = set(words)
+    return {
+        "length_bucket":    "short (<50)"  if word_count < 50
+                            else "medium (50-200)" if word_count <= 200
+                            else "long (>200)",
+        "has_negation":     bool(word_set & NEGATION_WORDS),
+        "has_irony_marker": bool(word_set & IRONY_MARKERS),
+        "word_count":       word_count,
+    }
+
+pattern_rows = []
+for _, row in misc_df.iterrows():
+    p = detect_patterns(row["text"])
+    pattern_rows.append({
+        "model":          row["model"],
+        "true":           row["true"],
+        "predicted":      row["predicted"],
+        "word_count":     p["word_count"],
+        "length_bucket":  p["length_bucket"],
+        "has_negation":   p["has_negation"],
+        "has_irony_marker": p["has_irony_marker"],
+    })
+
+pattern_df = pd.DataFrame(pattern_rows)
+pattern_df.to_csv("outputs/q1/q1_error_analysis.csv", index=False)
+
+# Aggregate pattern summary per model
+summary_rows = []
+for model_name, grp in pattern_df.groupby("model"):
+    summary_rows.append({
+        "model":              model_name,
+        "total_errors":       len(grp),
+        "short_reviews_%":    round(100 * (grp["length_bucket"] == "short (<50)").mean(), 1),
+        "long_reviews_%":     round(100 * (grp["length_bucket"] == "long (>200)").mean(), 1),
+        "negation_%":         round(100 * grp["has_negation"].mean(), 1),
+        "irony_marker_%":     round(100 * grp["has_irony_marker"].mean(), 1),
+    })
+
+summary_df = pd.DataFrame(summary_rows)
+summary_df.to_csv("outputs/q1/q1_error_pattern_summary.csv", index=False)
+print(summary_df.to_string(index=False))
+print("  Saved: outputs/q1/q1_error_analysis.csv")
+print("  Saved: outputs/q1/q1_error_pattern_summary.csv")
 
 print("\nPhase 1 complete. Results saved to outputs/")

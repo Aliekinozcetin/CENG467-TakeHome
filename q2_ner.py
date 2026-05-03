@@ -1,6 +1,6 @@
 """
 Q2 – Named Entity Recognition
-CoNLL-2003: BiLSTM-CRF vs BERT-base-cased token classification
+CoNLL-2003: BiLSTM-CRF vs DistilBERT-base-cased token classification
 """
 
 import os
@@ -21,7 +21,7 @@ from torch.optim import AdamW
 
 from datasets import load_dataset, load_from_disk
 from transformers import (
-    BertTokenizerFast, BertForTokenClassification,
+    DistilBertTokenizerFast, DistilBertForTokenClassification,
     get_linear_schedule_with_warmup
 )
 from seqeval.metrics import precision_score, recall_score, f1_score, classification_report
@@ -54,9 +54,14 @@ BERT_MAX_LEN  = 128
 # ---------------------------------------------------------------------------
 print("=" * 60)
 print("2.1  Loading CoNLL-2003 dataset…")
-# datasets>=4.0 no longer supports loading scripts; load from pre-cached disk copy
-CONLL_CACHE = "/tmp/conll2003_cached"
-raw = load_from_disk(CONLL_CACHE)
+CONLL_CACHE = "outputs/q2/conll2003_cached"
+if os.path.exists(CONLL_CACHE):
+    raw = load_from_disk(CONLL_CACHE)
+    print("  Loaded from local cache.")
+else:
+    raw = load_dataset("conll2003", trust_remote_code=True)
+    raw.save_to_disk(CONLL_CACHE)
+    print("  Downloaded and cached to disk.")
 print(f"  train={len(raw['train'])}, val={len(raw['validation'])}, test={len(raw['test'])}")
 
 # ---------------------------------------------------------------------------
@@ -305,6 +310,11 @@ def evaluate_bilstm(model, loader):
             all_preds, all_trues)
 
 bilstm_losses, bilstm_val_f1s = [], []
+BILSTM_CKPT      = "outputs/q2/bilstm_crf_best.pt"
+EARLY_STOP_NER   = 3
+best_val_f1_lstm = 0.0
+no_improve_lstm  = 0
+
 print("  Training BiLSTM-CRF…")
 for epoch in range(1, LSTM_EPOCHS + 1):
     bilstm_crf.train()
@@ -322,9 +332,24 @@ for epoch in range(1, LSTM_EPOCHS + 1):
     _, _, vf1, _, _ = evaluate_bilstm(bilstm_crf, val_loader)
     bilstm_losses.append(avg)
     bilstm_val_f1s.append(vf1)
-    print(f"  Epoch {epoch:02d} — loss: {avg:.4f} | val_F1: {vf1:.4f}")
 
-lstm_vp, lstm_vr, lstm_vf1, _, _               = evaluate_bilstm(bilstm_crf, val_loader)
+    marker = ""
+    if vf1 > best_val_f1_lstm:
+        best_val_f1_lstm = vf1
+        torch.save(bilstm_crf.state_dict(), BILSTM_CKPT)
+        no_improve_lstm = 0
+        marker = " ✓"
+    else:
+        no_improve_lstm += 1
+
+    print(f"  Epoch {epoch:02d} — loss: {avg:.4f} | val_F1: {vf1:.4f}{marker}")
+
+    if no_improve_lstm >= EARLY_STOP_NER:
+        print(f"  Early stopping at epoch {epoch} (no improvement for {EARLY_STOP_NER} epochs)")
+        break
+
+bilstm_crf.load_state_dict(torch.load(BILSTM_CKPT, map_location=device))
+lstm_vp, lstm_vr, lstm_vf1, _, _                  = evaluate_bilstm(bilstm_crf, val_loader)
 lstm_tp, lstm_tr, lstm_tf1, lstm_preds, lstm_trues = evaluate_bilstm(bilstm_crf, test_loader)
 print(f"  Val  — P:{lstm_vp:.4f} R:{lstm_vr:.4f} F1:{lstm_vf1:.4f}")
 print(f"  Test — P:{lstm_tp:.4f} R:{lstm_tr:.4f} F1:{lstm_tf1:.4f}")
@@ -335,12 +360,12 @@ a2.plot(bilstm_val_f1s, marker="o"); a2.set_title("BiLSTM-CRF Val F1"); a2.set_x
 plt.tight_layout(); plt.savefig("outputs/q2/q2_bilstm_crf_curve.png", dpi=150); plt.close()
 
 # ===========================================================================
-# 2.5 — Model 2: BERT-base-cased
+# 2.5 — Model 2: DistilBERT-base-cased
 # ===========================================================================
 print("\n" + "=" * 60)
-print("2.5  BERT-base-cased token classification…")
+print("2.5  DistilBERT-base-cased token classification…")
 
-bert_tokenizer = BertTokenizerFast.from_pretrained("bert-base-cased")
+bert_tokenizer = DistilBertTokenizerFast.from_pretrained("distilbert-base-cased")
 
 class NERBertDataset(Dataset):
     def __init__(self, split):
@@ -380,8 +405,8 @@ train_loader_bert = DataLoader(train_bert, batch_size=BERT_BATCH, shuffle=True, 
 val_loader_bert   = DataLoader(val_bert,   batch_size=BERT_BATCH, shuffle=False, num_workers=0)
 test_loader_bert  = DataLoader(test_bert,  batch_size=BERT_BATCH, shuffle=False, num_workers=0)
 
-bert_model = BertForTokenClassification.from_pretrained(
-    "bert-base-cased", num_labels=num_labels,
+bert_model = DistilBertForTokenClassification.from_pretrained(
+    "distilbert-base-cased", num_labels=num_labels,
     id2label=id2label, label2id=label2id,
 ).to(device)
 
@@ -393,7 +418,7 @@ scheduler      = get_linear_schedule_with_warmup(
     num_training_steps=total_steps,
 )
 
-BERT_CKPT = "outputs/q2/bert_ner_best.pt"
+BERT_CKPT = "outputs/q2/distilbert_ner_best.pt"
 
 def evaluate_bert_ner(model, loader):
     model.eval()
@@ -417,7 +442,7 @@ def evaluate_bert_ner(model, loader):
 
 bert_losses, bert_val_f1s = [], []
 best_val_f1 = 0.0
-print("  Training BERT-base-cased…")
+print("  Training DistilBERT-base-cased…")
 for epoch in range(1, BERT_EPOCHS + 1):
     bert_model.train()
     total_loss = 0.0
@@ -461,7 +486,7 @@ results = pd.DataFrame([
     {"Model": "BiLSTM-CRF",
      "Val P": lstm_vp, "Val R": lstm_vr, "Val F1": lstm_vf1,
      "Test P": lstm_tp, "Test R": lstm_tr, "Test F1": lstm_tf1},
-    {"Model": "BERT-base-cased",
+    {"Model": "DistilBERT-base-cased",
      "Val P": bert_vp, "Val R": bert_vr, "Val F1": bert_vf1,
      "Test P": bert_tp, "Test R": bert_tr, "Test F1": bert_tf1},
 ]).round(4)
@@ -470,7 +495,7 @@ results.to_csv("outputs/q2/q2_results.csv", index=False)
 
 print("\n  BiLSTM-CRF — per entity:")
 print(classification_report(lstm_trues, lstm_preds))
-print("\n  BERT-base-cased — per entity:")
+print("\n  DistilBERT-base-cased — per entity:")
 print(classification_report(bert_trues, bert_preds))
 
 def per_entity_rows(trues, preds, model_name):
@@ -488,7 +513,7 @@ def per_entity_rows(trues, preds, model_name):
 
 entity_df = pd.DataFrame(
     per_entity_rows(lstm_trues, lstm_preds, "BiLSTM-CRF") +
-    per_entity_rows(bert_trues, bert_preds, "BERT-base-cased")
+    per_entity_rows(bert_trues, bert_preds, "DistilBERT-base-cased")
 )
 entity_df.to_csv("outputs/q2/q2_per_entity_results.csv", index=False)
 print(entity_df.to_string(index=False))
@@ -501,6 +526,7 @@ print("2.8  Error analysis…")
 
 def error_analysis(trues, preds, model_name, split, n=20):
     boundary, type_conf = [], []
+    total_boundary = total_type_conf = 0
     dataset = raw[split]
     for i, (ts, ps) in enumerate(zip(trues, preds)):
         tokens = dataset[i]["tokens"][:len(ts)]
@@ -510,19 +536,32 @@ def error_analysis(trues, preds, model_name, split, n=20):
             t_type = t.split("-")[-1] if "-" in t else t
             p_type = p.split("-")[-1] if "-" in p else p
             if t_type == p_type:
-                boundary.append({"model": model_name, "token": tok, "true": t, "pred": p, "error": "boundary"})
+                total_boundary += 1
+                if len(boundary) < n:
+                    boundary.append({"model": model_name, "token": tok, "true": t, "pred": p, "error": "boundary"})
             elif t != "O" and p != "O":
-                type_conf.append({"model": model_name, "token": tok, "true": t, "pred": p, "error": "type_confusion"})
-    return boundary[:n], type_conf[:n]
+                total_type_conf += 1
+                if len(type_conf) < n:
+                    type_conf.append({"model": model_name, "token": tok, "true": t, "pred": p, "error": "type_confusion"})
+    return boundary, type_conf, total_boundary, total_type_conf
 
-lb, lt = error_analysis(lstm_trues, lstm_preds, "BiLSTM-CRF",     "test")
-bb, bt = error_analysis(bert_trues, bert_preds, "BERT-base-cased", "test")
+lb, lt, lb_total, lt_total = error_analysis(lstm_trues, lstm_preds, "BiLSTM-CRF",           "test")
+bb, bt, bb_total, bt_total = error_analysis(bert_trues, bert_preds, "DistilBERT-base-cased", "test")
 
 errors_df = pd.DataFrame(lb + lt + bb + bt)
 errors_df.to_csv("outputs/q2/q2_error_analysis.csv", index=False)
-print(f"  Saved → outputs/q2_error_analysis.csv")
-print(f"  BiLSTM-CRF   — boundary: {len(lb)}, type confusion: {len(lt)}")
-print(f"  BERT-base    — boundary: {len(bb)}, type confusion: {len(bt)}")
+
+# Error count summary
+error_summary = pd.DataFrame([
+    {"model": "BiLSTM-CRF",           "boundary_errors": lb_total, "type_confusion_errors": lt_total,
+     "total_errors": lb_total + lt_total},
+    {"model": "DistilBERT-base-cased", "boundary_errors": bb_total, "type_confusion_errors": bt_total,
+     "total_errors": bb_total + bt_total},
+])
+error_summary.to_csv("outputs/q2/q2_error_summary.csv", index=False)
+print(f"  Saved → outputs/q2/q2_error_analysis.csv")
+print(f"  Saved → outputs/q2/q2_error_summary.csv")
+print(error_summary.to_string(index=False))
 
 print("\n  Sample boundary errors:")
 for e in (lb + bb)[:5]:

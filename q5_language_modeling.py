@@ -1,6 +1,6 @@
 """
 Q5 – Language Modeling
-WikiText-2: Trigram LM (Laplace smoothing) vs LSTM LM (2-layer, weight tying)
+WikiText-2: Trigram LM (Kneser-Ney smoothing) vs LSTM LM (2-layer, weight tying)
 """
 
 import os
@@ -40,10 +40,10 @@ EMBED_DIM  = 512
 HIDDEN_SIZE= 512
 N_LAYERS   = 2
 DROPOUT    = 0.5
-N_EPOCHS   = 30
-LR         = 20.0       # SGD with lr scheduling (standard for LSTM LM)
-CLIP       = 0.25
-LR_FACTOR  = 4.0        # divide LR when val perplexity doesn't improve
+N_EPOCHS   = 20
+LR         = 1e-3       # AdamW learning rate
+CLIP       = 1.0        # standard gradient clipping for LM
+LR_FACTOR  = 2.0        # kept for reference, scheduler handles decay
 N_SAMPLES  = 5          # generated text samples per model
 SAMPLE_LEN = 50         # words per sample
 
@@ -120,32 +120,83 @@ pd.DataFrame({
 }).to_csv("outputs/q5/q5_vocab_stats.csv", index=False)
 
 # ---------------------------------------------------------------------------
-# 5.4 — Model 1: Trigram Language Model (Laplace smoothing)
+# 5.4 — Model 1: Trigram Language Model (Kneser-Ney smoothing)
 # ---------------------------------------------------------------------------
 print("\n" + "=" * 60)
-print("5.4  Trigram Language Model (Laplace smoothing)…")
+print("5.4  Trigram Language Model (Kneser-Ney smoothing)…")
 
 
 class TrigramLM:
+    """Interpolated Kneser-Ney trigram language model.
+
+    P_KN(w3|w1,w2) = max(c(w1,w2,w3) - d, 0) / c(w1,w2)
+                   + lambda(w1,w2) * P_KN(w3|w2)
+
+    P_KN(w3|w2)    = max(c_cont(w2,w3) - d, 0) / c_cont(w2)
+                   + lambda(w2) * P_uni(w3)
+
+    P_uni(w3)      = |{w2 : c(w2,w3)>0}| / total_continuation_count
+    """
+
+    DISCOUNT = 0.75   # standard fixed discount for KN
+
     def __init__(self, vocab_size: int):
         self.vocab_size = vocab_size
-        self.bigram_counts  = defaultdict(Counter)   # (w1,w2) → {w3: count}
-        self.context_totals = defaultdict(int)        # (w1,w2) → total count
+        # trigram counts: (w1,w2) → Counter{w3: count}
+        self.tri_counts  = defaultdict(Counter)
+        # bigram counts: w2 → Counter{w3: count}
+        self.bi_counts   = defaultdict(Counter)
+        # continuation counts for unigram: w3 → |{w2 : c(w2,w3)>0}|
+        self.uni_cont    = Counter()
+        # number of unique (w2,w3) pairs — denominator for P_uni
+        self.total_bi_types = 0
 
     def train(self, ids: list):
+        d = self.DISCOUNT
         for i in range(len(ids) - 2):
-            ctx  = (ids[i], ids[i + 1])
-            next_w = ids[i + 2]
-            self.bigram_counts[ctx][next_w] += 1
-            self.context_totals[ctx] += 1
-        print(f"  Trigram contexts seen: {len(self.bigram_counts):,}")
+            w1, w2, w3 = ids[i], ids[i + 1], ids[i + 2]
+            self.tri_counts[(w1, w2)][w3] += 1
+            self.bi_counts[w2][w3]        += 1
+
+        # Continuation unigram: how many unique left-contexts does w3 appear in
+        for w2, counter in self.bi_counts.items():
+            for w3, cnt in counter.items():
+                self.uni_cont[w3] += 1   # each unique (w2,w3) pair
+        self.total_bi_types = sum(self.uni_cont.values())
+
+        print(f"  Trigram contexts: {len(self.tri_counts):,}")
+        print(f"  Bigram  contexts: {len(self.bi_counts):,}")
+        print(f"  Discount d={d}")
+
+    def _p_uni(self, w3: int) -> float:
+        """Kneser-Ney unigram: continuation probability."""
+        return self.uni_cont.get(w3, 0) / max(self.total_bi_types, 1)
+
+    def _p_bi(self, w2: int, w3: int) -> float:
+        """Kneser-Ney bigram with backoff to KN unigram."""
+        d = self.DISCOUNT
+        counter  = self.bi_counts.get(w2)
+        if not counter:
+            return self._p_uni(w3)
+        c_w2w3   = counter.get(w3, 0)
+        c_w2     = sum(counter.values())
+        n_w2     = len(counter)           # |{w3 : c(w2,w3)>0}|
+        lam_w2   = (d * n_w2) / max(c_w2, 1)
+        norm     = max(c_w2w3 - d, 0) / c_w2
+        return norm + lam_w2 * self._p_uni(w3)
 
     def log_prob(self, w1: int, w2: int, w3: int) -> float:
-        ctx = (w1, w2)
-        count   = self.bigram_counts[ctx].get(w3, 0)
-        total   = self.context_totals[ctx]
-        # Laplace (add-1) smoothing
-        return math.log((count + 1) / (total + self.vocab_size))
+        d = self.DISCOUNT
+        counter  = self.tri_counts.get((w1, w2))
+        if not counter:
+            return math.log(max(self._p_bi(w2, w3), 1e-10))
+        c_tri    = counter.get(w3, 0)
+        c_bi     = sum(counter.values())
+        n_bi     = len(counter)           # |{w3 : c(w1,w2,w3)>0}|
+        lam_bi   = (d * n_bi) / max(c_bi, 1)
+        norm     = max(c_tri - d, 0) / c_bi
+        prob     = norm + lam_bi * self._p_bi(w2, w3)
+        return math.log(max(prob, 1e-10))
 
     def perplexity(self, ids: list) -> float:
         log_prob = 0.0
@@ -159,11 +210,12 @@ class TrigramLM:
                  temperature: float = 1.0) -> list:
         ids = list(seed_ids[-2:])
         for _ in range(length):
-            ctx = tuple(ids[-2:])
-            counts = self.bigram_counts.get(ctx)
-            if counts:
-                words  = list(counts.keys())
-                probs  = np.array([counts[w] for w in words], dtype=float)
+            w1, w2 = ids[-2], ids[-1]
+            # Sample from trigram distribution (fall back to bigram for unseen ctx)
+            counter = self.tri_counts.get((w1, w2)) or self.bi_counts.get(w2)
+            if counter:
+                words = list(counter.keys())
+                probs = np.array([counter[w] for w in words], dtype=float)
                 if temperature != 1.0:
                     probs = np.power(probs, 1.0 / temperature)
                 probs /= probs.sum()
@@ -290,7 +342,10 @@ print(f"  Weight tying: {'YES' if EMBED_DIM == HIDDEN_SIZE else 'NO (embed≠hid
 print(f"  Training on {device}, epochs={N_EPOCHS}, bptt={BPTT}, batch={BATCH_SIZE}")
 
 criterion = nn.CrossEntropyLoss(ignore_index=PAD_IDX)
-optimizer = torch.optim.SGD(lstm_model.parameters(), lr=LR)
+optimizer = torch.optim.AdamW(lstm_model.parameters(), lr=LR, weight_decay=1e-5)
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    optimizer, mode="min", factor=0.5, patience=2
+)
 
 history = []
 best_val_ppl = float("inf")
@@ -335,6 +390,9 @@ for epoch in range(1, N_EPOCHS + 1):
     train_ppl = math.exp(min(total_loss / total_tokens, 20))
     val_ppl   = evaluate_lm(lstm_model, val_lm_loader)
     elapsed   = time.time() - t0
+
+    scheduler.step(val_ppl)
+    lr = optimizer.param_groups[0]["lr"]
     history.append((epoch, train_ppl, val_ppl, lr))
 
     marker = ""
@@ -342,14 +400,9 @@ for epoch in range(1, N_EPOCHS + 1):
         best_val_ppl = val_ppl
         torch.save(lstm_model.state_dict(), best_path)
         marker = " ✓"
-    else:
-        # LR decay when no improvement
-        lr /= LR_FACTOR
-        for pg in optimizer.param_groups:
-            pg["lr"] = lr
 
     print(f"  Epoch {epoch:2d}/{N_EPOCHS} | train_ppl={train_ppl:.2f}"
-          f" | val_ppl={val_ppl:.2f} | lr={lr:.4f} | {elapsed:.0f}s{marker}")
+          f" | val_ppl={val_ppl:.2f} | lr={lr:.6f} | {elapsed:.0f}s{marker}")
 
 # Save training history
 hist_df = pd.DataFrame(history, columns=["epoch", "train_ppl", "val_ppl", "lr"])
@@ -394,7 +447,7 @@ print("\n" + "=" * 60)
 print("5.6  Results summary…")
 
 results = pd.DataFrame([
-    {"model": "Trigram (Laplace)", "val_ppl": round(trigram_val_ppl, 2),
+    {"model": "Trigram (Kneser-Ney)", "val_ppl": round(trigram_val_ppl, 2),
      "test_ppl": round(trigram_test_ppl, 2)},
     {"model": "LSTM LM (2-layer)", "val_ppl": round(lstm_val_ppl, 2),
      "test_ppl": round(lstm_test_ppl, 2)},
@@ -411,7 +464,7 @@ vals_test = [trigram_test_ppl, lstm_test_ppl]
 ax.bar(x - 0.2, vals_val,  0.4, label="Val PPL")
 ax.bar(x + 0.2, vals_test, 0.4, label="Test PPL")
 ax.set_xticks(x)
-ax.set_xticklabels(["Trigram (Laplace)", "LSTM LM (2-layer)"])
+ax.set_xticklabels(["Trigram (Kneser-Ney)", "LSTM LM (2-layer)"])
 ax.set_ylabel("Perplexity (lower = better)")
 ax.set_title("Q5 Language Model Perplexity Comparison")
 ax.legend()
@@ -431,7 +484,39 @@ samples_df = pd.DataFrame(sample_rows)
 samples_df.to_csv("outputs/q5/q5_samples.csv", index=False)
 print("  Samples → outputs/q5/q5_samples.csv")
 
-print("\n5.8  Fluency & coherence notes:")
+# ---------------------------------------------------------------------------
+# TTR (Type-Token Ratio) analysis
+# ---------------------------------------------------------------------------
+print("\n5.8  TTR (Type-Token Ratio) analysis…")
+
+def compute_ttr(text: str) -> float:
+    tokens = text.lower().split()
+    if not tokens:
+        return 0.0
+    return len(set(tokens)) / len(tokens)
+
+ttr_rows = []
+for i, (tg, ls) in enumerate(zip(trigram_samples, lstm_samples)):
+    ttr_rows.append({
+        "sample_id":   i + 1,
+        "trigram_ttr": round(compute_ttr(tg), 4),
+        "lstm_ttr":    round(compute_ttr(ls), 4),
+        "trigram_len": len(tg.split()),
+        "lstm_len":    len(ls.split()),
+    })
+
+ttr_df = pd.DataFrame(ttr_rows)
+ttr_df.loc["avg"] = ttr_df.mean(numeric_only=True)
+ttr_df.to_csv("outputs/q5/q5_ttr_analysis.csv")
+print(ttr_df.to_string())
+print("  TTR → outputs/q5/q5_ttr_analysis.csv")
+
+avg_ttr_trigram = ttr_df.loc["avg", "trigram_ttr"]
+avg_ttr_lstm    = ttr_df.loc["avg", "lstm_ttr"]
+print(f"\n  Avg TTR — Trigram: {avg_ttr_trigram:.4f} | LSTM: {avg_ttr_lstm:.4f}")
+print("  Higher TTR → more diverse vocabulary (not necessarily more coherent)")
+
+print("\n5.9  Fluency & coherence notes:")
 print("  Trigram: local bigram context only, long-range coherence poor")
 print("  LSTM:    hidden state carries long-range dependencies, more fluent")
 
