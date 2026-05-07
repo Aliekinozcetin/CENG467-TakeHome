@@ -279,6 +279,16 @@ Format: `[YYYY-MM-DD] | Phase | Description`
 
 ---
 
+## [2026-05-07] — Report Revisions (Quality Pass)
+### Changed
+- **Q1:** 5 gerçek misclassified örnek metni eklendi (Table 2) — her birinin neden yanlış sınıflandırıldığı açıklandı (negation, irony, truncation)
+- **Q3:** ROUGE-1 grafik başlığındaki "500 examples" hatası "1,000 test examples" olarak düzeltildi
+- **Q3:** Qualitative analiz bölümüne Christie örneği için LexRank/BART/Reference tam çıktıları eklendi
+- **Q4:** Seq2Seq model açıklamasına CPU eğitim gerekçesi eklendi (MPS pack_padded_sequence hızlandırmıyor)
+- **Q5:** Üretilmiş metin örnekleri (Trigram × 2, LSTM × 2) raporda gösterildi, fluency/coherence karşılaştırması yazıldı
+
+---
+
 ## [2026-05-04] — Phase 7 (Partial): GitHub Push
 ### Done
 - [x] Tüm değişiklikler commit edildi (32 dosya) — commit: 01e78b4

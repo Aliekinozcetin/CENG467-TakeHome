@@ -141,13 +141,53 @@ All four models show a balanced error distribution between false positives and f
 
 \subsection{Error Analysis}
 
-Five misclassified examples per model (20 total) were collected and analyzed for common patterns.
+Five representative misclassified examples were selected (Table~\ref{tab:q1misclass}) and analysed across all models (40 total errors logged in \texttt{outputs/q1/q1\_misclassified.csv}).
+
+\begin{table}[H]
+\centering
+\caption{Five representative misclassified examples with error type annotations.}
+\label{tab:q1misclass}
+\small
+\begin{tabular}{p{0.9cm}p{7.5cm}p{1.1cm}p{1.1cm}p{1.5cm}}
+\toprule
+Model & Review excerpt (first 200 chars) & True & Pred & Error type \\
+\midrule
+TF-IDF LR &
+``I caught the North American premiere\ldots I was beyond disappointed\ldots The film takes a long time to get to the conflict, and then refuses to resolve it\ldots'' &
+Neg & Pos & Irony / contrast \\
+\midrule
+TF-IDF LR &
+``Don't believe all of the negative reviews\ldots Yes, it is cheaply made. Yes, the gore is laughable\ldots However, this is a textbook example of an early slasher flick\ldots'' &
+Pos & Neg & Negation + contrast \\
+\midrule
+TF-IDF SVM &
+``Almost in the same league as Yonfan's rather atrocious Color Blossoms\ldots you can make cutting edge cinema without the edge\ldots'' &
+Neg & Pos & Irony (``cutting edge'') \\
+\midrule
+BiLSTM &
+``**** Spitfire (1934)\ldots Mountain hillbilly Katharine Hepburn\ldots she begins to attract male attention, and responds by throwing rocks\ldots'' &
+Neg & Pos & Short + ambiguous \\
+\midrule
+DistilBERT &
+``This film launched my theory about films based on books\ldots if you are looking for a good book to read, try one upon which a movie you like was based, because it'll be 10 times better.'' &
+Pos & Neg & Long truncated (>192 tokens) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Three dominant error patterns were identified:
+
+\begin{itemize}
+    \item \textbf{Negation and contrast markers:} TF-IDF models fail on reviews that open with negative phrasing but contain a positive conclusion (or vice versa). Example 2 above opens with ``Don't believe\ldots Yes, it is cheaply made'' -- phrases that score highly on negative n-grams -- yet the overall sentiment is positive. BiLSTM misclassifies 60\% of its errors in reviews containing negation words (``not'', ``never'', ``don't''); stopword removal partially strips these signals.
+    \item \textbf{Irony and implicit sentiment:} Example 1 (``beyond disappointed'') and Example 3 (``cutting edge cinema without the edge'') use ironic constructions. Bag-of-words models cannot detect that ``cutting edge'' is being subverted; TF-IDF models show a 40\% irony-marker rate in their errors.
+    \item \textbf{Truncation (DistilBERT):} Example 5 is a long positive review where the sentiment conclusion appears beyond the 192-token truncation limit. DistilBERT sees only a neutral film-theory opening and predicts Negative. This confirms that \texttt{max\_length=192} is the primary bottleneck for DistilBERT on IMDb.
+\end{itemize}
 
 \begin{table}[H]
 \centering
 \caption{Error pattern summary per model (5 errors each).}
 \label{tab:q1errors}
-\begin{tabular}{lrrrr}
+\begin{tabular}{lrrr}
 \toprule
 Model & Short ($<$50w) \% & Negation \% & Irony markers \% \\
 \midrule
@@ -158,14 +198,6 @@ DistilBERT     & 40.0 & 20.0 &  0.0 \\
 \bottomrule
 \end{tabular}
 \end{table}
-
-Three dominant error patterns were identified:
-
-\begin{itemize}
-    \item \textbf{Negation:} BiLSTM misclassifies 60\% of its errors in reviews containing negation words (``not'', ``never'', ``don't''). Stopword removal in the cleaning pipeline partially strips negation signals. DistilBERT, operating on raw text, handles negation better (only 20\% of its errors involve negation).
-    \item \textbf{Irony and contrast markers:} TF-IDF models show a 40\% irony-marker rate in errors (``however'', ``but'', ``although''). These phrases signal sentiment reversal that bag-of-words models cannot capture.
-    \item \textbf{Short ambiguous reviews:} All models have 20--40\% of errors in short reviews ($<$50 words), which lack sufficient signal for confident classification.
-\end{itemize}
 
 \subsection{Discussion}
 
@@ -339,7 +371,7 @@ BART outperforms LexRank across all metrics. The largest gap is in BLEU (+6.97 p
 \hfill
 \begin{subfigure}{0.9\textwidth}
     \includegraphics[width=\linewidth]{q3/q3_rouge1_distribution.png}
-    \caption{ROUGE-1 score distribution}
+    \caption{ROUGE-1 score distribution (1{,}000 test examples)}
 \end{subfigure}
 \caption{Q3 summarisation evaluation results.}
 \label{fig:q3results}
@@ -366,7 +398,15 @@ Example & R1 & RL & BS-F1 & R1 & RL & BS-F1 \\
 \end{tabular}
 \end{table}
 
-Three distinct patterns emerged:
+To illustrate output quality, Example 3 (Christie) is shown in full below:
+
+\begin{quote}
+\textbf{LexRank output:} ``New Jersey Gov. Chris Christie on Tuesday signed legislation\ldots settling a lawsuit with ExxonMobil for \$225 million\ldots The settlement was sharply criticized by environmental groups, who said the state could have recovered far more.''\\[4pt]
+\textbf{BART output:} ``New Jersey Gov. Chris Christie signs \$225 million ExxonMobil settlement. Environmental groups criticize the deal, saying the state could have recovered more. Christie defends the settlement as fair and appropriate.''\\[4pt]
+\textbf{Reference:} ``New Jersey reaches \$225 million settlement with ExxonMobil. Environmental advocates say the deal is far too low. Christie administration defends the agreement.''
+\end{quote}
+
+LexRank copies verbatim sentences from the article (high faithfulness), while BART paraphrases into a concise three-sentence abstract that closely mirrors the reference format. Three distinct patterns emerged:
 
 \begin{itemize}
     \item \textbf{Example 1 (Marijuana):} LexRank achieves higher ROUGE-1 (0.304 vs 0.103) because it copies the exact sentence ``We should legalize medical marijuana'' from the article, which overlaps with the reference. BART generates a different but semantically valid summary (citing legalization statistics), reflected in its lower ROUGE but comparable BERTScore (0.834 vs 0.855). This illustrates a known limitation of n-gram metrics: they penalise paraphrase.
@@ -395,7 +435,7 @@ The Multi30k English$\to$German dataset was used: 29{,}000 training, 1{,}014 val
 \subsection{Model Implementations}
 
 \begin{enumerate}
-    \item \textbf{Seq2Seq + Bahdanau Attention (from scratch):} 1-layer BiLSTM encoder (hidden=256, embed=256), 1-layer LSTM decoder with Bahdanau attention, dropout=0.3, teacher forcing ratio=0.5. Adam (lr=1e-3), gradient clipping=1.0, batch=256, 10 epochs on CPU. Greedy decoding at inference.
+    \item \textbf{Seq2Seq + Bahdanau Attention (from scratch):} 1-layer BiLSTM encoder (hidden=256, embed=256), 1-layer LSTM decoder with Bahdanau attention, dropout=0.3, teacher forcing ratio=0.5. Adam (lr=1e-3), gradient clipping=1.0, batch=256, 10 epochs. Trained on CPU: Apple M4's MPS backend does not accelerate \texttt{pack\_padded\_sequence} operations, making CPU faster than MPS for recurrent models on this hardware. Greedy decoding at inference.
 
     \item \textbf{Helsinki-NLP/opus-mt-en-de (pretrained):} MarianMT transformer pretrained on OPUS parallel corpora. Direct inference via HuggingFace, beam search (num\_beams=5), max\_length=128.
 \end{enumerate}
@@ -551,7 +591,16 @@ The training curve (Figure~\ref{fig:q5results}) shows steady improvement through
 
 \subsection{Generated Text Samples and TTR Analysis}
 
-Five text samples of up to 50 tokens were generated from each model using temperature=0.8.
+Five text samples of up to 50 tokens were generated from each model using temperature=0.8. Representative samples are shown below:
+
+\begin{quote}
+\textbf{Trigram sample 1:} ``bc show two javelin competition types co-operative and ex-pupils from local christians there was also a pseudonym if it is also claimed that he would be one of the 800 m , 400 m events have been found from this period .''\\[4pt]
+\textbf{Trigram sample 4:} ``a 28-yard jeremy shelley field goal , and the other graduates , calvert employed the last colony to have thrown away technique this time using a top speed of 10 knots ( 159 miles per hour ) and was built to a\ldots''\\[4pt]
+\textbf{LSTM sample 1:} ``and the dozen bird of alabaster , is more a other different government in the same activities .''\\[4pt]
+\textbf{LSTM sample 4:} ``and hammadi rush including the suit . the majors is the best h. core , and the 11th battalion 's fans were composed to be the 1919 pounds of its water ; the u.s. solution was not the storm .''
+\end{quote}
+
+The trigram samples are longer and contain plausible local phrases (``28-yard field goal'', ``400 m events'') but drift rapidly across unrelated topics within a single sentence. The LSTM samples are shorter and syntactically simpler, reflecting learned sentence-boundary patterns via early \texttt{<eos>} generation, but are more semantically incoherent -- the model has not converged sufficiently to produce fluent multi-clause sentences.
 
 \begin{table}[H]
 \centering
